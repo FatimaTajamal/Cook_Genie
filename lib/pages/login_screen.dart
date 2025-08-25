@@ -35,11 +35,9 @@ class _LoginScreenState extends State<LoginScreen> {
         _emailController.text.trim(),
         _passwordController.text.trim(),
       );
-      if (_keepLoggedIn) {
-        await FirebaseAuth.instance.setPersistence(Persistence.LOCAL);
-      } else {
-        await FirebaseAuth.instance.setPersistence(Persistence.SESSION);
-      }
+      // On mobile, Firebase handles persistence automatically based on the sign-in method.
+      // This block is for web platforms only and is removed for mobile.
+      // The `_keepLoggedIn` variable is not needed for mobile persistence.
       if (!mounted || user == null) {
         showToast(message: "Login failed. Please try again.");
         return;
@@ -75,9 +73,8 @@ class _LoginScreenState extends State<LoginScreen> {
       final userCredential = await FirebaseAuth.instance.signInWithCredential(
         credential,
       );
-      if (_keepLoggedIn) {
-        await FirebaseAuth.instance.setPersistence(Persistence.LOCAL);
-      }
+      // This call is not necessary for mobile and causes an error.
+      // Firebase automatically handles persistence for mobile platforms.
       if (!mounted || userCredential.user == null) {
         showToast(message: "Google Sign-In failed. Please try again.");
         return;
@@ -211,7 +208,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       }
                       return null;
                     },
-                      onFieldSubmitted: (_) => _signIn(),
+                    onFieldSubmitted: (_) => _signIn(),
                   ),
                   CheckboxListTile(
                     value: _keepLoggedIn,
@@ -228,49 +225,49 @@ class _LoginScreenState extends State<LoginScreen> {
                   Align(
                     alignment: Alignment.centerRight,
                     child: TextButton(
-                     onPressed: _isLoading
-      ? null
-      : () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => const ForgotPasswordScreen(),
-            ),
-          );
-        },
-        child: const Text(
-          'Forgot Password?',
-          style: TextStyle(
-            color: Colors.white,
-            fontWeight: FontWeight.w600,
-            ),
-            ),
+                      onPressed: _isLoading
+                          ? null
+                          : () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const ForgotPasswordScreen(),
+                                ),
+                              );
+                            },
+                      child: const Text(
+                        'Forgot Password?',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 30),
                   _isLoading
                       ? const CircularProgressIndicator(color: Colors.white)
                       : GestureDetector(
-                        onTap: _signIn,
-                        child: Container(
-                          width: double.infinity,
-                          height: 45,
-                          decoration: BoxDecoration(
-                            color: Colors.blue,
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: const Center(
-                            child: Text(
-                              "Log in",
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 18,
+                          onTap: _signIn,
+                          child: Container(
+                            width: double.infinity,
+                            height: 45,
+                            decoration: BoxDecoration(
+                              color: Colors.blue,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: const Center(
+                              child: Text(
+                                "Log in",
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 18,
+                                ),
                               ),
                             ),
                           ),
                         ),
-                      ),
                   const SizedBox(height: 20),
                   OutlinedButton.icon(
                     onPressed: _isLoading ? null : _signInWithGoogle,
