@@ -5,7 +5,8 @@
     <application
         android:label="cook_genie"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:enableOnBackInvokedCallback="true">
 
         <!-- ✅ Correct way to disable Impeller -->
         <meta-data
