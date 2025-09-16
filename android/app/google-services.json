@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1033640517643",
+    "project_id": "cook-genie-2600f",
+    "storage_bucket": "cook-genie-2600f.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1033640517643:android:877f392b7e41e19d71670e",
+        "android_client_info": {
+          "package_name": "com.example.cook_genie"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD2SZ6NCSEOB3jcm4unxr6it_xtx_LkRew"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
