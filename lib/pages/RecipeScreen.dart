@@ -103,6 +103,8 @@ void initState() {
         _currentTextIndex = 0;
         _isLoading = false;
       });
+          final voiceController = Get.find<VoiceAssistantController>();
+           voiceController.speak(_formatRecipe(recipe));
     } else {
       setState(() {
         _recipe = null;
