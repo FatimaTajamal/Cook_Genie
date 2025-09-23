@@ -1,3 +1,4 @@
+// main.dart
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -7,6 +8,7 @@ import 'pages/login_screen.dart';
 import 'pages/signup_screen.dart';
 import 'pages/main_screen.dart';
 import 'theme/theme_provider.dart';
+import 'pages/voice_assistant_controller.dart'; // Import the voice controller
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,7 +27,12 @@ void main() async {
   } else {
     await Firebase.initializeApp();
   }
-  runApp(const CookGenieApp()); // 🐛 Corrected: Moved this line outside the if/else block.
+
+  // This is the crucial line that solves the error.
+  // It creates and registers the controller before the app even starts building the UI.
+  Get.put(VoiceAssistantController());
+
+  runApp(const CookGenieApp());
 }
 
 class CookGenieApp extends StatelessWidget {
@@ -50,7 +57,6 @@ class CookGenieApp extends StatelessWidget {
     );
   }
 }
-
 
 
 // import 'package:firebase_core/firebase_core.dart';

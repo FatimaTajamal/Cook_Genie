@@ -1,7 +1,7 @@
+// HomeScreen.dart
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'RecipeScreen.dart';
-import 'RecipeSearch.dart';
 import 'Categories.dart';
 import 'voice_assistant_controller.dart';
 
@@ -14,40 +14,54 @@ class HomeScreen extends StatefulWidget {
   _HomeScreenState createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final ScrollController _scrollController = ScrollController();
-  final VoiceAssistantController voiceController =
-      Get.put(VoiceAssistantController());
+  late final VoiceAssistantController voiceController; // Use late final
 
   final List<Map<String, dynamic>> categories = [
     {"title": "Breakfast", "icon": Icons.free_breakfast, "color": Colors.orange},
-    {"title": "Lunch", "icon": Icons.lunch_dining, "color": const Color(0xFF87EB8A)},
-    {"title": "Dinner", "icon": Icons.restaurant, "color": const Color(0xFF81BDEE)},
-    {"title": "Brunch", "icon": Icons.brunch_dining, "color": const Color(0xFFCF86DC)},
-    {"title": "Snacks", "icon": Icons.fastfood, "color": const Color(0xFFE2AAA6)},
+    {"title": "Lunch", "icon": Icons.lunch_dining, "color": Color(0xFF87EB8A)},
+    {"title": "Dinner", "icon": Icons.restaurant, "color": Color(0xFF81BDEE)},
+    {"title": "Brunch", "icon": Icons.brunch_dining, "color": Color(0xFFCF86DC)},
+    {"title": "Snacks", "icon": Icons.fastfood, "color": Color(0xFFE2AAA6)},
   ];
 
   @override
   void initState() {
     super.initState();
-    loadSavedRecipes();
+    WidgetsBinding.instance.addObserver(this);
+    voiceController = Get.find<VoiceAssistantController>(); // Get the controller instance
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!voiceController.hasWelcomed) {
         voiceController.hasWelcomed = true;
         await voiceController.speak(
           "Welcome to Cook Genie. Say search to find a recipe or use the search bar manually.",
-          listenAfter: true,
         );
-      } else {
-        voiceController.restartListening();
+      }
+      // Start listening when HomeScreen is first built
+      if (!voiceController.isListening) {
+        voiceController.startListeningOnHome(savedRecipes: widget.savedRecipes);
       }
     });
   }
 
-  void loadSavedRecipes() async {
-    await RecipeService.loadRecipesFromStorage();
-    setState(() {});
+  @override
+  void dispose() {
+   voiceController.onHomePageLeft();
+    super.dispose();
+  }
+
+  /// Called when app lifecycle state changes
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Resume mic when HomeScreen comes back to the foreground
+      voiceController.restartListening(savedRecipes: widget.savedRecipes);
+    } else if (state == AppLifecycleState.paused) {
+      // Stop mic when leaving the app
+      voiceController.stopListening();
+    }
   }
 
   @override
@@ -94,7 +108,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildSearchBar() {
     return GestureDetector(
-      onTap: () => Get.to(() => RecipeScreen(savedRecipes: widget.savedRecipes)),
+      onTap: () {
+        voiceController.stopListening();
+        Get.to(() => RecipeScreen(savedRecipes: widget.savedRecipes));
+      },
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
@@ -141,6 +158,7 @@ class _HomeScreenState extends State<HomeScreen> {
       itemBuilder: (context, index) {
         return GestureDetector(
           onTap: () {
+            voiceController.stopListening();
             String category = categories[index]['title'];
             Get.to(() => CategoryRecipeScreen(category: category));
           },
@@ -187,11 +205,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
 
 
+
+
 // import 'package:flutter/material.dart';
 // import 'package:get/get.dart';
 // import 'RecipeScreen.dart';
-// import 'RecipeSearch.dart';
 // import 'Categories.dart';
+// import 'voice_assistant_controller.dart';
 
 // class HomeScreen extends StatefulWidget {
 //   final List<Map<String, dynamic>> savedRecipes;
@@ -202,34 +222,54 @@ class _HomeScreenState extends State<HomeScreen> {
 //   _HomeScreenState createState() => _HomeScreenState();
 // }
 
-// class _HomeScreenState extends State<HomeScreen> {
+// class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 //   final ScrollController _scrollController = ScrollController();
+//   final VoiceAssistantController voiceController =
+//       Get.put(VoiceAssistantController());
 
 //   final List<Map<String, dynamic>> categories = [
-//     {
-//       "title": "Breakfast",
-//       "icon": Icons.free_breakfast,
-//       "color": Colors.orange,
-//     },
+//     {"title": "Breakfast", "icon": Icons.free_breakfast, "color": Colors.orange},
 //     {"title": "Lunch", "icon": Icons.lunch_dining, "color": Color(0xFF87EB8A)},
 //     {"title": "Dinner", "icon": Icons.restaurant, "color": Color(0xFF81BDEE)},
-//     {
-//       "title": "Brunch",
-//       "icon": Icons.brunch_dining,
-//       "color": Color(0xFFCF86DC),
-//     },
+//     {"title": "Brunch", "icon": Icons.brunch_dining, "color": Color(0xFFCF86DC)},
 //     {"title": "Snacks", "icon": Icons.fastfood, "color": Color(0xFFE2AAA6)},
 //   ];
 
 //   @override
 //   void initState() {
 //     super.initState();
-//     loadSavedRecipes();
+//     WidgetsBinding.instance.addObserver(this);
+
+//     WidgetsBinding.instance.addPostFrameCallback((_) async {
+//       if (!voiceController.hasWelcomed) {
+//         voiceController.hasWelcomed = true;
+//         await voiceController.speak(
+//           "Welcome to Cook Genie. Say search to find a recipe or use the search bar manually.",
+//         );
+//       }
+
+//       // Start listening when HomeScreen is visible
+//       voiceController.startListeningOnHome(savedRecipes: widget.savedRecipes);
+//     });
 //   }
 
-//   void loadSavedRecipes() async {
-//     await RecipeService.loadRecipesFromStorage();
-//     setState(() {});
+//   @override
+//   void dispose() {
+//     voiceController.stopListening();
+//     WidgetsBinding.instance.removeObserver(this);
+//     super.dispose();
+//   }
+
+//   /// Called when app lifecycle state changes
+//   @override
+//   void didChangeAppLifecycleState(AppLifecycleState state) {
+//     if (state == AppLifecycleState.resumed) {
+//       // Resume mic when HomeScreen comes back
+//       voiceController.startListeningOnHome(savedRecipes: widget.savedRecipes);
+//     } else if (state == AppLifecycleState.paused) {
+//       // Stop mic when leaving screen
+//       voiceController.stopListening();
+//     }
 //   }
 
 //   @override
@@ -255,7 +295,6 @@ class _HomeScreenState extends State<HomeScreen> {
 //               crossAxisAlignment: CrossAxisAlignment.start,
 //               children: [
 //                 _buildSearchBar(),
-//                 const SizedBox(height: 10),
 //                 const SizedBox(height: 20),
 //                 const Text(
 //                   "Recipe Categories",
@@ -277,8 +316,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
 //   Widget _buildSearchBar() {
 //     return GestureDetector(
-//       onTap:
-//           () => Get.to(() => RecipeScreen(savedRecipes: widget.savedRecipes)),
+//       onTap: () {
+//         voiceController.stopListening();
+//         Get.to(() => RecipeScreen(savedRecipes: widget.savedRecipes));
+//       },
 //       child: Container(
 //         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
 //         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
@@ -324,7 +365,8 @@ class _HomeScreenState extends State<HomeScreen> {
 //       itemCount: categories.length,
 //       itemBuilder: (context, index) {
 //         return GestureDetector(
-//           onTap: () async {
+//           onTap: () {
+//             voiceController.stopListening();
 //             String category = categories[index]['title'];
 //             Get.to(() => CategoryRecipeScreen(category: category));
 //           },
@@ -344,7 +386,11 @@ class _HomeScreenState extends State<HomeScreen> {
 //             child: Column(
 //               mainAxisAlignment: MainAxisAlignment.center,
 //               children: [
-//                 Icon(categories[index]['icon'], size: 50, color: Colors.white),
+//                 Icon(
+//                   categories[index]['icon'],
+//                   size: 50,
+//                   color: Colors.white,
+//                 ),
 //                 const SizedBox(height: 10),
 //                 Text(
 //                   categories[index]['title'],
