@@ -44,10 +44,10 @@ class _RecipeScreenState extends State<RecipeScreen> {
 
     final voiceController = Get.find<VoiceAssistantController>();
     
-    // ✅ Stop home page listening when entering recipe screen
-    voiceController.onHomePageLeft();
+    // Stop home page listening when entering recipe screen
+    voiceController.stopHomeListening();
 
-    // ✅ Only activate voice features if voice mode is on
+    // Only activate voice features if voice mode is on
     if (widget.isVoiceActivated) {
       if (widget.initialRecipe != null) {
         _recipe = widget.initialRecipe;
@@ -85,8 +85,8 @@ class _RecipeScreenState extends State<RecipeScreen> {
     final voiceController = Get.find<VoiceAssistantController>();
     voiceController.stopRecipeReading();
     
-    // ✅ Re-enable home page listening when leaving recipe screen
-    voiceController.enableContinuousListening(savedRecipes: widget.savedRecipes);
+    // Re-enable home page listening when leaving recipe screen
+    voiceController.startHomeListening(savedRecipes: widget.savedRecipes);
     
     // Reset voice mode when leaving screen
     if (widget.isVoiceActivated) {
@@ -115,7 +115,7 @@ class _RecipeScreenState extends State<RecipeScreen> {
         _isLoading = false;
       });
 
-      // ✅ Only read recipe if in voice mode
+      // Only read recipe if in voice mode
       if (widget.isVoiceActivated) {
         final voiceController = Get.find<VoiceAssistantController>();
         await voiceController.startRecipeReading(_formatRecipe(recipe));
@@ -228,6 +228,20 @@ class _RecipeScreenState extends State<RecipeScreen> {
     setState(() => _isListening = false);
   }
 
+  // Start recipe reading manually
+  void _startManualRecipeReading() {
+    if (_recipe == null) return;
+    
+    final voiceController = Get.find<VoiceAssistantController>();
+    voiceController.startRecipeReading(_formatRecipe(_recipe!));
+  }
+
+  // Stop recipe reading manually
+  void _stopManualRecipeReading() {
+    final voiceController = Get.find<VoiceAssistantController>();
+    voiceController.stopRecipeReading();
+  }
+
   @override
   Widget build(BuildContext context) {
     return WillPopScope(
@@ -235,8 +249,8 @@ class _RecipeScreenState extends State<RecipeScreen> {
         final voiceController = Get.find<VoiceAssistantController>();
         voiceController.stopRecipeReading();
         
-        // ✅ Re-enable home page listening when back button pressed
-        voiceController.enableContinuousListening(savedRecipes: widget.savedRecipes);
+        // Re-enable home page listening when back button pressed
+        voiceController.startHomeListening(savedRecipes: widget.savedRecipes);
         
         if (widget.isVoiceActivated) {
           voiceController.resetVoiceMode();
@@ -294,42 +308,48 @@ class _RecipeScreenState extends State<RecipeScreen> {
                   ],
                 ),
               const SizedBox(height: 16),
-              // ✅ Only show voice status if in voice mode
-              if (widget.isVoiceActivated)
-                GetBuilder<VoiceAssistantController>(
-                  builder: (controller) {
-                    return Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: controller.isRecipeListening 
-                            ? Colors.green.withOpacity(0.2)
-                            : Colors.grey.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            controller.isRecipeListening ? Icons.mic : Icons.mic_off,
-                            color: controller.isRecipeListening ? Colors.green : Colors.grey,
-                            size: 16,
+              // Voice status indicator - shows in both modes
+              GetBuilder<VoiceAssistantController>(
+                builder: (controller) {
+                  // Only show if recipe reading is active
+                  if (!controller.isRecipeSpeaking && !controller.isRecipePaused && !controller.isListening) {
+                    return const SizedBox.shrink();
+                  }
+                  
+                  return Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: controller.isListening 
+                          ? Colors.green.withOpacity(0.2)
+                          : Colors.grey.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          controller.isListening ? Icons.mic : Icons.mic_off,
+                          color: controller.isListening ? Colors.green : Colors.grey,
+                          size: 16,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          controller.isListening 
+                              ? widget.isVoiceActivated 
+                                  ? "Voice commands active (say 'pause' or 'play')"
+                                  : "Listening for commands..."
+                              : "Voice commands inactive",
+                          style: TextStyle(
+                            color: controller.isListening ? Colors.green : Colors.grey,
+                            fontSize: 12,
                           ),
-                          const SizedBox(width: 8),
-                          Text(
-                            controller.isRecipeListening 
-                                ? "Voice commands active (say 'pause' or 'play')"
-                                : "Voice commands inactive",
-                            style: TextStyle(
-                              color: controller.isRecipeListening ? Colors.green : Colors.grey,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-              if (widget.isVoiceActivated) const SizedBox(height: 16),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+              const SizedBox(height: 16),
               Expanded(
                 child: _hasSearched
                     ? _isLoading
@@ -423,37 +443,54 @@ class _RecipeScreenState extends State<RecipeScreen> {
             );
           }).toList(),
           const SizedBox(height: 20),
-          // ✅ Only show playback controls if in voice mode
-          if (widget.isVoiceActivated)
-            GetBuilder<VoiceAssistantController>(
-              builder: (controller) {
-                return Center(
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.fast_rewind),
-                        onPressed: controller.rewindRecipe,
-                      ),
-                      IconButton(
-                        icon: Icon(controller.isRecipeSpeaking ? Icons.pause : Icons.play_arrow),
-                        onPressed: () {
-                          if (controller.isRecipeSpeaking) {
-                            controller.pauseRecipe();
-                          } else {
-                            controller.resumeRecipe();
-                          }
-                        },
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.fast_forward),
-                        onPressed: controller.fastForwardRecipe,
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
+          // Playback controls - always visible when recipe is loaded
+GetBuilder<VoiceAssistantController>(
+  builder: (controller) {
+    return Column(
+      children: [
+        // 🎵 Main Playback Controls Row
+        Center(
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // ⏪ Rewind
+              IconButton(
+                icon: const Icon(Icons.skip_previous, size: 30),
+                tooltip: "Previous section",
+                onPressed: controller.rewindRecipe,
+              ),
+
+              // ▶️ Single Play/Pause Toggle Button
+IconButton(
+  icon: Icon(
+    controller.isRecipeSpeaking ? Icons.pause : Icons.play_arrow,
+    size: 36,
+  ),
+  tooltip: controller.isRecipeSpeaking ? "Pause" : "Play",
+  onPressed: () {
+    if (controller.isRecipeSpeaking) {
+      _stopManualRecipeReading();
+    } else {
+      _startManualRecipeReading();
+    }
+  },
+),
+
+              // ⏩ Forward
+              IconButton(
+                icon: const Icon(Icons.skip_next, size: 30),
+                tooltip: "Next section",
+                onPressed: controller.fastForwardRecipe,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  },
+),
+
+          const SizedBox(height: 20),
           Center(
             child: ElevatedButton(
               onPressed: () {
@@ -478,7 +515,6 @@ class _RecipeScreenState extends State<RecipeScreen> {
     );
   }
 }
-
 
 
 

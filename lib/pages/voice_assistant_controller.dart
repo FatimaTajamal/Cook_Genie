@@ -11,8 +11,6 @@ class VoiceAssistantController extends GetxController {
 
   bool hasWelcomed = false;
   bool _isListening = false;
-  bool _shouldKeepListening = false;
-  Timer? _restartTimer;
   Completer<void>? _speechCompleter; // Track TTS completion
 
   // Track if user activated voice mode
@@ -23,17 +21,18 @@ class VoiceAssistantController extends GetxController {
   bool _isRecipeMode = false;
   bool _isRecipeSpeaking = false;
   bool _isRecipePaused = false;
-  bool _isRecipeListening = false;
   String _currentRecipeText = "";
   List<String> _recipeTextParts = [];
   int _currentRecipeIndex = 0;
   final double _speechRate = 0.5;
 
+  // Home screen listening state
+  bool _isHomeListening = false;
+
   bool get isListening => _isListening;
-  bool get shouldKeepListening => _shouldKeepListening;
-  bool get isRecipeListening => _isRecipeListening;
   bool get isRecipeSpeaking => _isRecipeSpeaking;
   bool get isRecipePaused => _isRecipePaused;
+  bool get isHomeListening => _isHomeListening;
 
   @override
   void onInit() {
@@ -85,33 +84,33 @@ class VoiceAssistantController extends GetxController {
   void _initializeSpeech() {
     _speech.initialize(
       onStatus: (status) {
-        if (status == "notListening" || status == "done") {
-          if (_isRecipeMode) {
-            _isRecipeListening = false;
-            if (_shouldKeepListening) _scheduleRecipeListeningRestart();
-          } else {
-            _isListening = false;
-            if (_shouldKeepListening) _scheduleRestart();
-          }
+        print("Speech status: $status");
+        if (status == "listening") {
+          _isListening = true;
           update();
-        } else if (status == "listening") {
-          if (_isRecipeMode) {
-            _isRecipeListening = true;
-          } else {
-            _isListening = true;
-          }
+        } else if (status == "notListening" || status == "done") {
+          _isListening = false;
           update();
+          
+          // Restart listening if we're still in a listening mode
+          if (_isRecipeMode) {
+            _restartRecipeListening();
+          } else if (_isHomeListening) {
+            _restartHomeListening();
+          }
         }
       },
-      onError: (_) {
-        if (_isRecipeMode) {
-          _isRecipeListening = false;
-          if (_shouldKeepListening) _scheduleRecipeListeningRestart();
-        } else {
-          _isListening = false;
-          if (_shouldKeepListening) _scheduleRestart();
-        }
+      onError: (error) {
+        print("Speech error: $error");
+        _isListening = false;
         update();
+        
+        // Restart listening on error if we're still in a listening mode
+        if (_isRecipeMode) {
+          _restartRecipeListening();
+        } else if (_isHomeListening) {
+          _restartHomeListening();
+        }
       },
     );
   }
@@ -128,7 +127,7 @@ class VoiceAssistantController extends GetxController {
 
     await _speakRecipe();
 
-    _shouldKeepListening = true;
+    // Start continuous listening for recipe commands
     _startRecipeListening();
   }
   
@@ -179,14 +178,12 @@ class VoiceAssistantController extends GetxController {
 
   void stopRecipeReading() {
     _isRecipeMode = false;
-    _shouldKeepListening = false;
     _isRecipeSpeaking = false;
     _isRecipePaused = false;
-    _isRecipeListening = false;
 
     _tts.stop();
     _speech.stop();
-    _cancelRestartTimer();
+    _isListening = false;
     
     // Complete any pending speech
     if (_speechCompleter != null && !_speechCompleter!.isCompleted) {
@@ -198,38 +195,51 @@ class VoiceAssistantController extends GetxController {
   }
 
   void _startRecipeListening() async {
-    if (_isRecipeListening || !_isRecipeMode || !_shouldKeepListening) return;
+    if (_isListening || !_isRecipeMode) return;
 
     bool available = await _speech.isAvailable;
     if (!available) {
-      _scheduleRecipeListeningRestart();
+      Future.delayed(const Duration(milliseconds: 500), _restartRecipeListening);
       return;
     }
 
-    _isRecipeListening = true;
+    _isListening = true;
     update();
 
     try {
-      _speech.listen(
+      await _speech.listen(
         onResult: (val) {
           final command = val.recognizedWords.toLowerCase();
           print("Recipe mode heard: $command");
 
-          if (command.contains("pause") || command.contains("stop")) {
+          if (command.contains("stop") || command.contains("pause")) {
             pauseRecipe();
-          } else if (command.contains("play") || command.contains("start")) {
+          } else if (command.contains("start") || command.contains("resume") || command.contains("continue")) {
             resumeRecipe();
+          } else if (command.contains("next") || command.contains("forward")) {
+            fastForwardRecipe();
+          } else if (command.contains("back") || command.contains("previous") || command.contains("rewind")) {
+            rewindRecipe();
+          } else if (command.contains("repeat") || command.contains("again")) {
+            repeatCurrentSection();
           }
         },
-        listenFor: const Duration(seconds: 30),
+        listenFor: const Duration(seconds: 60), // Longer duration
         partialResults: true,
-        pauseFor: const Duration(seconds: 3),
-        cancelOnError: true,
+        pauseFor: const Duration(seconds: 60), // Don't auto-pause
+        cancelOnError: false,
         listenMode: stt.ListenMode.confirmation,
       );
-    } catch (_) {
-      _isRecipeListening = false;
-      if (_shouldKeepListening) _scheduleRecipeListeningRestart();
+    } catch (e) {
+      print("Error starting recipe listening: $e");
+      _isListening = false;
+      Future.delayed(const Duration(milliseconds: 500), _restartRecipeListening);
+    }
+  }
+
+  void _restartRecipeListening() {
+    if (_isRecipeMode && !_isListening) {
+      Future.delayed(const Duration(milliseconds: 300), _startRecipeListening);
     }
   }
 
@@ -276,43 +286,32 @@ class VoiceAssistantController extends GetxController {
     }
   }
 
-  void _scheduleRecipeListeningRestart() {
-    _cancelRestartTimer();
-    _restartTimer = Timer(const Duration(milliseconds: 1500), () {
-      if (_shouldKeepListening && _isRecipeMode) {
-        _startRecipeListening();
-      }
-    });
-  }
-
   // -------------------- Home Page Listening --------------------
 
-  void enableContinuousListening({List<Map<String, dynamic>>? savedRecipes}) {
-    if (_isRecipeMode) return;
+  void startHomeListening({List<Map<String, dynamic>>? savedRecipes}) async {
+    if (_isRecipeMode || _isHomeListening) return;
 
-    _cancelRestartTimer();
-    stopListening();
-
-    _shouldKeepListening = true;
-    Timer(const Duration(milliseconds: 300), () {
-      if (_shouldKeepListening && !_isRecipeMode) {
-        _startListeningSession(savedRecipes: savedRecipes);
-      }
-    });
+    _isHomeListening = true;
+    _startHomeListeningSession(savedRecipes: savedRecipes);
   }
 
-  void disableContinuousListening() {
-    _shouldKeepListening = false;
-    _cancelRestartTimer();
-    stopListening();
+  void stopHomeListening() {
+    _isHomeListening = false;
+    if (!_isRecipeMode) {
+      _speech.stop();
+      _isListening = false;
+      update();
+    }
   }
 
-  void _startListeningSession({List<Map<String, dynamic>>? savedRecipes}) async {
-    if (_isListening || _isRecipeMode || !_shouldKeepListening) return;
+  void _startHomeListeningSession({List<Map<String, dynamic>>? savedRecipes}) async {
+    if (_isListening || _isRecipeMode || !_isHomeListening) return;
 
     bool available = await _speech.isAvailable;
     if (!available) {
-      _scheduleRestart(savedRecipes: savedRecipes);
+      Future.delayed(const Duration(milliseconds: 500), () {
+        _restartHomeListening(savedRecipes: savedRecipes);
+      });
       return;
     }
 
@@ -320,17 +319,17 @@ class VoiceAssistantController extends GetxController {
     update();
 
     try {
-      _speech.listen(
+      await _speech.listen(
         onResult: (val) {
           final command = val.recognizedWords.toLowerCase();
           print("Home mode heard: $command");
 
-          if (command.contains("search")) {
+          if (command.contains("search") || command.contains("find")) {
             // Activate voice mode when "search" is said
             _isVoiceMode = true;
-            _shouldKeepListening = false;
-            stopListening();
-            _cancelRestartTimer();
+            _isHomeListening = false;
+            _speech.stop();
+            _isListening = false;
 
             if (savedRecipes != null) {
               Get.to(() => RecipeScreen(
@@ -345,30 +344,27 @@ class VoiceAssistantController extends GetxController {
             }
           }
         },
-        listenFor: const Duration(seconds: 30),
+        listenFor: const Duration(seconds: 60), // Longer duration
         partialResults: true,
-        pauseFor: const Duration(seconds: 5),
-        cancelOnError: true,
+        pauseFor: const Duration(seconds: 60), // Don't auto-pause
+        cancelOnError: false,
         listenMode: stt.ListenMode.confirmation,
       );
-    } catch (_) {
+    } catch (e) {
+      print("Error starting home listening: $e");
       _isListening = false;
-      if (_shouldKeepListening) _scheduleRestart(savedRecipes: savedRecipes);
+      Future.delayed(const Duration(milliseconds: 500), () {
+        _restartHomeListening(savedRecipes: savedRecipes);
+      });
     }
   }
 
-  void _scheduleRestart({List<Map<String, dynamic>>? savedRecipes}) {
-    _cancelRestartTimer();
-    _restartTimer = Timer(const Duration(seconds: 2), () {
-      if (_shouldKeepListening && !_isRecipeMode) {
-        _startListeningSession(savedRecipes: savedRecipes);
-      }
-    });
-  }
-
-  void _cancelRestartTimer() {
-    _restartTimer?.cancel();
-    _restartTimer = null;
+  void _restartHomeListening({List<Map<String, dynamic>>? savedRecipes}) {
+    if (_isHomeListening && !_isListening && !_isRecipeMode) {
+      Future.delayed(const Duration(milliseconds: 300), () {
+        _startHomeListeningSession(savedRecipes: savedRecipes);
+      });
+    }
   }
 
   // Updated speak method that properly waits for TTS completion
@@ -376,13 +372,6 @@ class VoiceAssistantController extends GetxController {
     if (_isRecipeMode) {
       await _tts.speak(text);
       return;
-    }
-
-    // Stop any ongoing listening
-    bool wasListening = _shouldKeepListening;
-    if (wasListening) {
-      _shouldKeepListening = false;
-      stopListening();
     }
 
     await _tts.stop();
@@ -394,12 +383,6 @@ class VoiceAssistantController extends GetxController {
     
     // Wait for the speech to complete
     await _speechCompleter!.future;
-
-    // Restart listening if it was active before
-    if (wasListening) {
-      _shouldKeepListening = true;
-      _startListeningSession();
-    }
   }
 
   // Reset voice mode (call when user manually navigates)
@@ -408,36 +391,39 @@ class VoiceAssistantController extends GetxController {
     update();
   }
 
-  // Legacy methods
+  // Legacy methods for backward compatibility
+  void enableContinuousListening({List<Map<String, dynamic>>? savedRecipes}) {
+    startHomeListening(savedRecipes: savedRecipes);
+  }
+
+  void disableContinuousListening() {
+    stopHomeListening();
+  }
+
   void startListeningOnHome({List<Map<String, dynamic>>? savedRecipes}) {
-    enableContinuousListening(savedRecipes: savedRecipes);
+    startHomeListening(savedRecipes: savedRecipes);
   }
 
   void restartListening({List<Map<String, dynamic>>? savedRecipes}) {
-    enableContinuousListening(savedRecipes: savedRecipes);
+    startHomeListening(savedRecipes: savedRecipes);
   }
 
   void onHomePageLeft() {
-    disableContinuousListening();
+    stopHomeListening();
   }
 
   void stopListening() {
-    if (_isListening) {
-      _speech.stop();
-      _isListening = false;
-      update();
+    if (_isRecipeMode) {
+      // Don't stop listening in recipe mode unless explicitly stopped
+      return;
     }
-    if (_isRecipeListening) {
-      _speech.stop();
-      _isRecipeListening = false;
-      update();
-    }
+    stopHomeListening();
   }
 
   @override
   void onClose() {
     stopRecipeReading();
-    disableContinuousListening();
+    stopHomeListening();
     _tts.stop();
     
     // Clean up any pending completers
