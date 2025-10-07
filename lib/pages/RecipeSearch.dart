@@ -384,6 +384,67 @@ static Future<List<String>> getRecipeSuggestionsByCategoryAndPreference({
   }
 }
 
+// 💡 NEW: RECIPE SUGGESTIONS (used for two-stage voice search)
+static Future<List<String>> getRecipeSuggestions(String query) async {
+  final prefs = await SharedPreferences.getInstance();
+  final List<String> preferences = prefs.getStringList('dietPreferences') ?? [];
+  final String dietaryPart = preferences.isNotEmpty
+      ? "suitable for someone with the following dietary preferences: ${preferences.join(', ')}"
+      : "";
+
+  final Map<String, dynamic> requestData = {
+    "contents": [
+      {
+        "role": "user",
+        "parts": [
+          {
+            "text":
+                "The user said '$query'. Suggest 4 specific, popular recipes that contain '$query' $dietaryPart. "
+                "For example, if the query is 'chicken', suggest 'Chicken Tikka Masala'. If the query is 'pasta', suggest 'Spaghetti Carbonara'. "
+                "Return ONLY a valid JSON array of the recipe names, like [\"Recipe 1\", \"Recipe 2\", \"Recipe 3\", \"Recipe 4\"]."
+          }
+        ]
+      }
+    ]
+  };
+
+  try {
+    final response = await http.post(
+      Uri.parse(geminiUrl),
+      headers: {"Content-Type": "application/json"},
+      body: jsonEncode(requestData),
+    );
+
+    if (response.statusCode == 200) {
+      final jsonResponse = jsonDecode(response.body);
+      String content =
+          jsonResponse["candidates"][0]["content"]["parts"][0]["text"];
+      
+      // Clean up markdown and extra text
+      content =
+          content.replaceAll("```json", "").replaceAll("```", "").trim();
+      
+      final decoded = jsonDecode(content);
+
+      if (decoded is List) {
+        // Take the first 4 suggestions to keep the voice response brief
+        return decoded
+            .map<String>((item) => item.toString())
+            .take(4)
+            .toList();
+      } else {
+        // Fallback if Gemini doesn't return a list
+        return [];
+      }
+    } else {
+      return [];
+    }
+  } catch (e) {
+    print("Error fetching suggestions: $e");
+    return [];
+  }
+}
+
 
   static Future<List<Map<String, dynamic>>> getMultipleRecipes(
     List<String> recipeNames,
