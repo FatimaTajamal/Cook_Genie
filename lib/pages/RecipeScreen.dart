@@ -37,9 +37,10 @@ class _RecipeScreenState extends State<RecipeScreen> {
   String _ttsText = "";
   Map<String, dynamic>? _recipe;
 
-  // State variable for the two-stage voice flow
+  // State variable for the multi-stage voice flow
   String? _clarificationQuery;
-  List<String>? _suggestedRecipes; // Store the fetched suggestions
+  List<String>? _suggestedRecipes;
+  bool _awaitingReadyConfirmation = false;
 
   @override
   void initState() {
@@ -65,7 +66,7 @@ class _RecipeScreenState extends State<RecipeScreen> {
           await voiceController.speak(
             "Please say the name of the dish you want to search for.",
           );
-          await Future.delayed(const Duration(milliseconds: 500));
+          await Future.delayed(const Duration(milliseconds: 2000));
           _listen();
         });
       }
@@ -95,6 +96,7 @@ class _RecipeScreenState extends State<RecipeScreen> {
     // Reset clarification state
     _clarificationQuery = null;
     _suggestedRecipes = null;
+    _awaitingReadyConfirmation = false;
 
     _controller.dispose();
     super.dispose();
@@ -120,13 +122,13 @@ class _RecipeScreenState extends State<RecipeScreen> {
 
       if (widget.isVoiceActivated) {
         final voiceController = Get.find<VoiceAssistantController>();
-        await voiceController.startRecipeReading(_formatRecipe(recipe));
+        await _presentEssentialsAndWaitForReady(recipe, voiceController);
       }
     } else {
       if (widget.isVoiceActivated) {
          final voiceController = Get.find<VoiceAssistantController>();
          await voiceController.speak("I couldn't find a recipe for $query. Please try another name.");
-         await Future.delayed(const Duration(milliseconds: 500));
+         await Future.delayed(const Duration(milliseconds: 2000));
          _listen();
       }
       
@@ -136,6 +138,82 @@ class _RecipeScreenState extends State<RecipeScreen> {
         _isLoading = false;
       });
     }
+  }
+
+  Future<void> _presentEssentialsAndWaitForReady(
+    Map<String, dynamic> recipe,
+    VoiceAssistantController voiceController,
+  ) async {
+    final essentials = _extractDetailedEssentials(recipe);
+    
+    String essentialsText = "Here are the essentials for ${recipe['name']}: ";
+    essentialsText += "You will need ${essentials['ingredientCount']} main ingredients, ";
+    essentialsText += "which include ${essentials['keyIngredients']}. ";
+    essentialsText += "The recipe takes approximately ${essentials['estimatedTime']}. ";
+    
+    setState(() {
+      _awaitingReadyConfirmation = true;
+    });
+    
+    // Speak the essentials first
+    await voiceController.speak(essentialsText);
+    
+    // Wait a bit to ensure TTS is completely done
+    await Future.delayed(const Duration(milliseconds: 1500));
+    
+    // Now say "Say ready when you want to begin cooking" separately
+    await voiceController.speak("Say ready when you want to begin cooking.");
+    
+    // Wait for this second TTS to completely finish before starting mic
+    await Future.delayed(const Duration(milliseconds: 2500));
+    
+    if (_awaitingReadyConfirmation && mounted) {
+      _listenContinuously();
+    }
+  }
+
+  Map<String, dynamic> _extractDetailedEssentials(Map<String, dynamic> recipe) {
+    final ingredients = recipe['ingredients'] as List<dynamic>? ?? [];
+    final instructions = recipe['instructions'] as List<dynamic>? ?? [];
+    
+    // Get first 8 key ingredients
+    List<String> keyIngredients = [];
+    for (int i = 0; i < (ingredients.length > 8 ? 8 : ingredients.length); i++) {
+      final ingredient = ingredients[i];
+      keyIngredients.add(ingredient['name']);
+    }
+    
+    // Estimate time based on instruction count
+    String estimatedTime;
+    if (instructions.length <= 5) {
+      estimatedTime = "15 to 20 minutes";
+    } else if (instructions.length <= 10) {
+      estimatedTime = "30 to 45 minutes";
+    } else {
+      estimatedTime = "45 minutes to 1 hour";
+    }
+    
+    // Determine difficulty level
+    String difficulty;
+    if (instructions.length <= 5 && ingredients.length <= 8) {
+      difficulty = "Easy";
+    } else if (instructions.length <= 10 && ingredients.length <= 12) {
+      difficulty = "Medium";
+    } else {
+      difficulty = "Advanced";
+    }
+    
+    // Estimate servings (default assumption)
+    String servings = ingredients.length > 10 ? "4-6 people" : "2-4 people";
+    
+    return {
+      'ingredientCount': ingredients.length,
+      'keyIngredients': keyIngredients.join(", "),
+      'estimatedTime': estimatedTime,
+      'ingredients': keyIngredients,
+      'difficulty': difficulty,
+      'servings': servings,
+    };
   }
 
   String _formatRecipe(Map<String, dynamic> recipe) {
@@ -189,6 +267,100 @@ class _RecipeScreenState extends State<RecipeScreen> {
     _startListening();
   }
 
+  // New method for continuous listening during "ready" confirmation
+  Future<void> _listenContinuously() async {
+    if (kIsWeb) {
+      _startContinuousListening();
+      return;
+    }
+
+    var status = await Permission.microphone.status;
+    if (!status.isGranted) {
+      status = await Permission.microphone.request();
+      if (!status.isGranted) {
+        return;
+      }
+    }
+
+    _startContinuousListening();
+  }
+
+  void _startContinuousListening() async {
+    if (!mounted) return;
+    
+    if (_speech.isListening) {
+      await _speech.stop();
+      await Future.delayed(const Duration(milliseconds: 300));
+    }
+
+    bool available = await _speech.initialize(
+      onStatus: (val) {
+        print("Continuous listening status: $val");
+        if (val == 'done' || val == 'notListening') {
+          // Automatically restart listening if still waiting for ready
+          if (_awaitingReadyConfirmation && mounted) {
+            Future.delayed(const Duration(milliseconds: 500), () {
+              if (_awaitingReadyConfirmation && mounted) {
+                _startContinuousListening();
+              }
+            });
+          }
+        }
+      },
+      onError: (val) {
+        print("Continuous listening error: $val");
+        // Restart on error
+        if (_awaitingReadyConfirmation && mounted) {
+          Future.delayed(const Duration(milliseconds: 500), () {
+            if (_awaitingReadyConfirmation && mounted) {
+              _startContinuousListening();
+            }
+          });
+        }
+      },
+    );
+
+    if (available && _awaitingReadyConfirmation && mounted) {
+      setState(() => _isListening = true);
+
+      _speech.listen(
+        onResult: (val) async {
+          if (val.finalResult) {
+            String recognizedWords = val.recognizedWords.trim().toLowerCase();
+            final voiceController = Get.find<VoiceAssistantController>();
+
+            print("Recognized in ready mode: $recognizedWords");
+
+            setState(() {
+              _controller.text = recognizedWords;
+            });
+
+            if (_awaitingReadyConfirmation) {
+              if (recognizedWords.contains("ready")) {
+                setState(() {
+                  _awaitingReadyConfirmation = false;
+                  _isListening = false;
+                });
+                
+                await _speech.stop();
+                
+                // Start reading the full recipe
+                await voiceController.startRecipeReading(_formatRecipe(_recipe!));
+              } else {
+                // Keep listening continuously - will auto-restart via status callback
+                print("Did not detect 'ready', will continue listening");
+              }
+            }
+          }
+        },
+        listenFor: const Duration(seconds: 30),
+        pauseFor: const Duration(seconds: 5),
+        partialResults: true,
+        cancelOnError: false,
+      );
+    }
+  }
+
   void _startListening() async {
     if (_speech.isListening) {
       await _speech.stop();
@@ -207,7 +379,7 @@ class _RecipeScreenState extends State<RecipeScreen> {
       _speech.listen(
         onResult: (val) async {
           if (val.finalResult) {
-            String recognizedWords = val.recognizedWords.trim();
+            String recognizedWords = val.recognizedWords.trim().toLowerCase();
             final voiceController = Get.find<VoiceAssistantController>();
 
             setState(() {
@@ -218,15 +390,12 @@ class _RecipeScreenState extends State<RecipeScreen> {
 
             await _speech.stop();
             
-            // --- UPDATED TWO-STAGE LOGIC ---
             if (_clarificationQuery == null) {
               // STAGE 1: User said something like "Pasta"
-              // Fetch actual recipe suggestions from Gemini
               setState(() {
                 _clarificationQuery = recognizedWords;
               });
 
-              // Fetch suggestions
               List<String> suggestions = await RecipeService.getRecipeSuggestions(recognizedWords);
               
               if (suggestions.isNotEmpty) {
@@ -235,19 +404,17 @@ class _RecipeScreenState extends State<RecipeScreen> {
                   _isLoading = false;
                 });
 
-                // Build the speech text
                 String clarificationText = "Here are some $recognizedWords recipes: ";
                 clarificationText += suggestions.join(", ");
                 clarificationText += ". Which one would you like?";
                 
                 await voiceController.speak(clarificationText);
                 
-                // Start listening again for the specific recipe
-                await Future.delayed(const Duration(milliseconds: 500));
+                // Wait for TTS to finish before starting mic
+                await Future.delayed(const Duration(milliseconds: 2000));
                 _startListening();
 
               } else {
-                // No suggestions found, ask user to try again
                 setState(() {
                   _clarificationQuery = null;
                   _suggestedRecipes = null;
@@ -257,15 +424,50 @@ class _RecipeScreenState extends State<RecipeScreen> {
                 await voiceController.speak(
                   "I couldn't find any $recognizedWords recipes. Please try another dish."
                 );
-                await Future.delayed(const Duration(milliseconds: 500));
+                await Future.delayed(const Duration(milliseconds: 2000));
                 _startListening();
               }
 
             } else {
-              // STAGE 2: User gave the specific recipe name
+              // STAGE 2: User gave the specific recipe name from suggestions
               String finalQuery = recognizedWords;
               
-              // Reset state for next time
+              // Check if the user's input matches one of the suggestions
+              bool matchFound = false;
+              if (_suggestedRecipes != null) {
+                for (String suggestion in _suggestedRecipes!) {
+                  if (recognizedWords.contains(suggestion.toLowerCase()) || 
+                      suggestion.toLowerCase().contains(recognizedWords)) {
+                    finalQuery = suggestion;
+                    matchFound = true;
+                    break;
+                  }
+                }
+              }
+              
+              // If no match found, try using the recognized words directly
+              if (!matchFound && _suggestedRecipes != null && _suggestedRecipes!.isNotEmpty) {
+                // Try to find partial match
+                for (String suggestion in _suggestedRecipes!) {
+                  List<String> suggestionWords = suggestion.toLowerCase().split(' ');
+                  List<String> recognizedWordsList = recognizedWords.split(' ');
+                  
+                  // Check if at least 2 words match
+                  int matchCount = 0;
+                  for (String word in recognizedWordsList) {
+                    if (suggestionWords.contains(word)) {
+                      matchCount++;
+                    }
+                  }
+                  
+                  if (matchCount >= 2 || (recognizedWordsList.length == 1 && matchCount >= 1)) {
+                    finalQuery = suggestion;
+                    matchFound = true;
+                    break;
+                  }
+                }
+              }
+              
               _clarificationQuery = null;
               _suggestedRecipes = null;
               
@@ -275,8 +477,6 @@ class _RecipeScreenState extends State<RecipeScreen> {
 
               await _searchRecipe(finalQuery);
             }
-            // --- END OF UPDATED TWO-STAGE LOGIC ---
-
           } else {
             setState(() {
               _controller.text = val.recognizedWords;
@@ -291,19 +491,27 @@ class _RecipeScreenState extends State<RecipeScreen> {
 
   void _onSpeechStatus(String status) {
     if (status == 'done') {
-      if (_clarificationQuery == null && _isLoading == false) {
+      if (_clarificationQuery == null && _isLoading == false && !_awaitingReadyConfirmation) {
          setState(() => _isListening = false);
       }
     }
   }
 
   void _onSpeechError(dynamic error) {
+    print("Speech error: $error");
     setState(() {
       _isListening = false;
       _isLoading = false;
-      _clarificationQuery = null;
-      _suggestedRecipes = null;
     });
+    
+    // Don't reset states during ready confirmation
+    if (!_awaitingReadyConfirmation) {
+      setState(() {
+        _clarificationQuery = null;
+        _suggestedRecipes = null;
+      });
+    }
+    // Continuous listening will auto-restart via its own error handler
   }
 
   void _startManualRecipeReading() {
@@ -407,11 +615,13 @@ class _RecipeScreenState extends State<RecipeScreen> {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          (_isListening || controller.isListening)
-                              ? _clarificationQuery != null
-                                  ? "Listening for specific recipe..."
-                                  : "Listening for dish type..."
-                              : "Voice commands inactive",
+                          _awaitingReadyConfirmation
+                              ? "Waiting for 'ready' confirmation..."
+                              : (_isListening || controller.isListening)
+                                  ? _clarificationQuery != null
+                                      ? "Listening for specific recipe..."
+                                      : "Listening for dish type..."
+                                  : "Voice commands inactive",
                           style: TextStyle(
                             color: (_isListening || controller.isListening) ? Colors.green : Colors.grey,
                             fontSize: 12,
@@ -423,7 +633,44 @@ class _RecipeScreenState extends State<RecipeScreen> {
                 },
               ),
               const SizedBox(height: 16),
-              // Show suggested recipes during clarification
+              if (_awaitingReadyConfirmation && _recipe != null)
+                SizedBox(
+                  height: 220,
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.orange.withOpacity(0.3)),
+                    ),
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            "Recipe Essentials for ${_recipe!['name']}:",
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          ..._buildEssentialsDisplay(_extractDetailedEssentials(_recipe!)),
+                          const SizedBox(height: 12),
+                          const Text(
+                            "🎤 Say 'ready' when you want to begin cooking",
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontStyle: FontStyle.italic,
+                              color: Colors.green,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
               if (_suggestedRecipes != null && _suggestedRecipes!.isNotEmpty)
                 Container(
                   padding: const EdgeInsets.all(12),
@@ -475,6 +722,49 @@ class _RecipeScreenState extends State<RecipeScreen> {
           ),
         ),
       ),
+    );
+  }
+
+  List<Widget> _buildEssentialsDisplay(Map<String, dynamic> essentials) {
+    return [
+      _buildEssentialRow(Icons.restaurant_menu, 
+        "Ingredients", "${essentials['ingredientCount']} items needed"),
+      const SizedBox(height: 8),
+      _buildEssentialRow(Icons.access_time, 
+        "Time", essentials['estimatedTime']),
+      const SizedBox(height: 8),
+      _buildEssentialRow(Icons.signal_cellular_alt, 
+        "Difficulty", essentials['difficulty']),
+      const SizedBox(height: 8),
+      _buildEssentialRow(Icons.people, 
+        "Servings", essentials['servings']),
+      const SizedBox(height: 8),
+      _buildEssentialRow(Icons.shopping_basket, 
+        "Key Items", essentials['keyIngredients']),
+    ];
+  }
+
+  Widget _buildEssentialRow(IconData icon, String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 18, color: Colors.orange),
+        const SizedBox(width: 8),
+        Expanded(
+          child: RichText(
+            text: TextSpan(
+              style: const TextStyle(fontSize: 13, color: Colors.black87),
+              children: [
+                TextSpan(
+                  text: "$label: ",
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                TextSpan(text: value),
+              ],
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -562,16 +852,16 @@ class _RecipeScreenState extends State<RecipeScreen> {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         IconButton(
-                          icon: const Icon(Icons.skip_previous, size: 30),
-                          tooltip: "Previous section",
+                          icon: const Icon(Icons.replay_10, size: 30),
+                          tooltip: "back",
                           onPressed: controller.rewindRecipe,
                         ),
                         IconButton(
                           icon: Icon(
-                            controller.isRecipeSpeaking ? Icons.pause : Icons.play_arrow,
+                            controller.isRecipeSpeaking ? Icons.stop : Icons.play_arrow,
                             size: 36,
                           ),
-                          tooltip: controller.isRecipeSpeaking ? "Pause" : "Play",
+                          tooltip: controller.isRecipeSpeaking ? "pause" : "play",
                           onPressed: () {
                             if (controller.isRecipeSpeaking) {
                               _stopManualRecipeReading();
@@ -581,8 +871,8 @@ class _RecipeScreenState extends State<RecipeScreen> {
                           },
                         ),
                         IconButton(
-                          icon: const Icon(Icons.skip_next, size: 30),
-                          tooltip: "Next section",
+                          icon: const Icon(Icons.forward_10, size: 30),
+                          tooltip: "Skip",
                           onPressed: controller.fastForwardRecipe,
                         ),
                       ],
