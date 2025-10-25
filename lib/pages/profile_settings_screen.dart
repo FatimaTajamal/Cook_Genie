@@ -1,613 +1,3 @@
-// import 'package:flutter/material.dart';
-// import 'package:shared_preferences/shared_preferences.dart';
-// import 'package:get/get.dart';
-// import 'package:firebase_auth/firebase_auth.dart';
-// import 'package:multi_select_flutter/multi_select_flutter.dart';
-// import 'package:image_picker/image_picker.dart';
-// import 'dart:io';
-// import 'package:flutter_tts/flutter_tts.dart';
-// import '../theme/theme_provider.dart';
-// import '../global/toast.dart';
-// import 'login_screen.dart';
-
-// class ProfileSettingsScreen extends StatefulWidget {
-//   const ProfileSettingsScreen({super.key});
-
-//   @override
-//   State<ProfileSettingsScreen> createState() => _ProfileSettingsScreenState();
-// }
-
-// class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
-//   final TextEditingController _nameController = TextEditingController();
-//   final TextEditingController _ageController = TextEditingController();
-//   final TextEditingController _ingredientsController = TextEditingController();
-//   final TextEditingController _allergiesController = TextEditingController();
-//   String? _selectedGender;
-//   List<String> _selectedDietaryPreferences = [];
-//   bool _isDarkMode = false;
-//   bool _notificationsEnabled = true;
-//   String _selectedLanguage = 'English';
-//   String? _profileImagePath;
-//   bool _isLoading = false;
-
-//   final _formKey = GlobalKey<FormState>();
-//   final FlutterTts _tts = FlutterTts();
-//   final List<String> _dietaryOptions = [
-//     'Vegetarian',
-//     'Vegan',
-//     'Gluten-Free',
-//     'Keto',
-//     'Paleo',
-//     'Halal',
-//     'Kosher',
-//   ];
-//   final List<String> _genderOptions = ['Male', 'Female', 'Other'];
-//   final List<String> _languageOptions = ['English', 'Spanish', 'French'];
-//   final Map<String, String> _languageCodes = {
-//     'English': 'en-US',
-//     'Spanish': 'es-ES',
-//     'French': 'fr-FR',
-//   };
-
-//   @override
-//   void initState() {
-//     super.initState();
-//     _loadProfileAndSettings();
-//   }
-
-//   Future<void> _loadProfileAndSettings() async {
-//     setState(() => _isLoading = true);
-//     final prefs = await SharedPreferences.getInstance();
-//     setState(() {
-//       _nameController.text = prefs.getString('name') ?? '';
-//       _ageController.text = prefs.getString('age') ?? '';
-//       _selectedGender = prefs.getString('gender');
-//       _selectedDietaryPreferences =
-//           prefs.getStringList('dietPreferences') ?? [];
-//       _ingredientsController.text =
-//           (prefs.getStringList('availableIngredients') ?? []).join(', ');
-//       _allergiesController.text = (prefs.getStringList('allergies') ?? []).join(
-//         ', ',
-//       );
-//       _isDarkMode = prefs.getBool('isDarkMode') ?? false;
-//       _notificationsEnabled = prefs.getBool('notificationsEnabled') ?? true;
-//       _selectedLanguage = prefs.getString('language') ?? 'English';
-//       _profileImagePath = prefs.getString('profileImagePath');
-//       _isLoading = false;
-//     });
-//     // Sync TTS language
-//     await _tts.setLanguage(_languageCodes[_selectedLanguage] ?? 'en-US');
-//   }
-
-//   Future<void> _saveProfileAndSettings() async {
-//     if (!_formKey.currentState!.validate()) return;
-
-//     setState(() => _isLoading = true);
-//     final prefs = await SharedPreferences.getInstance();
-//     final ingredients =
-//         _ingredientsController.text
-//             .split(',')
-//             .map((e) => e.trim())
-//             .where((e) => e.isNotEmpty)
-//             .toSet()
-//             .toList();
-//     final allergies =
-//         _allergiesController.text
-//             .split(',')
-//             .map((e) => e.trim())
-//             .where((e) => e.isNotEmpty)
-//             .toSet()
-//             .toList();
-
-//     await prefs.setString('name', _nameController.text.trim());
-//     await prefs.setString('age', _ageController.text.trim());
-//     await prefs.setString('gender', _selectedGender ?? '');
-//     await prefs.setStringList('dietPreferences', _selectedDietaryPreferences);
-//     await prefs.setStringList('availableIngredients', ingredients);
-//     await prefs.setStringList('allergies', allergies);
-//     await prefs.setBool('isDarkMode', _isDarkMode);
-//     await prefs.setBool('notificationsEnabled', _notificationsEnabled);
-//     await prefs.setString('language', _selectedLanguage);
-//     if (_profileImagePath != null) {
-//       await prefs.setString('profileImagePath', _profileImagePath!);
-//     }
-
-//     // Update TTS language
-//     await _tts.setLanguage(_languageCodes[_selectedLanguage] ?? 'en-US');
-
-//     setState(() => _isLoading = false);
-//     showToast(message: 'Profile and settings saved!');
-//   }
-
-//   Future<void> _toggleTheme(bool value) async {
-//     setState(() => _isDarkMode = value);
-//     final themeProvider = Get.find<ThemeProvider>();
-//     themeProvider.toggleTheme(value);
-//     await _saveProfileAndSettings();
-//   }
-
-//   Future<void> _toggleNotifications(bool value) async {
-//     setState(() => _notificationsEnabled = value);
-//     await _saveProfileAndSettings();
-//   }
-
-//   Future<void> _pickProfileImage() async {
-//     final picker = ImagePicker();
-//     final pickedFile = await picker.pickImage(source: ImageSource.gallery);
-//     if (pickedFile != null) {
-//       setState(() {
-//         _profileImagePath = pickedFile.path;
-//       });
-//       await _saveProfileAndSettings();
-//     }
-//   }
-
-//   Future<void> _showTermsDialog() async {
-//     const termsText = """
-// Cook Genie Terms & Conditions
-// Last Updated: September 8, 2025
-
-// 1. **Acceptance of Terms**: By using Cook Genie, you agree to these terms.
-// 2. **User Data**: Your profile data and preferences are stored locally via SharedPreferences. Firebase Authentication manages account data.
-// 3. **API Usage**: Recipes are generated using Gemini AI and images from Pixabay. Internet connectivity is required.
-// 4. **Privacy**: We do not share your data with third parties except as required by Firebase and API services.
-// 5. **Liability**: Cook Genie is not responsible for dietary or allergic reactions from recipes.
-// 6. **Contact**: For support, email support@cookgenie.com.
-// """;
-//     showDialog(
-//       context: context,
-//       builder:
-//           (_) => AlertDialog(
-//             title: const Text("Terms & Conditions"),
-//             content: SizedBox(
-//               height: 300,
-//               child: SingleChildScrollView(child: Text(termsText)),
-//             ),
-//             actions: [
-//               TextButton(
-//                 onPressed: () => Navigator.pop(context),
-//                 child: const Text("Close"),
-//               ),
-//             ],
-//           ),
-//     );
-//   }
-
-//   Future<void> _clearData() async {
-//     bool? confirm = await showDialog(
-//       context: context,
-//       builder:
-//           (_) => AlertDialog(
-//             title: const Text("Clear Data"),
-//             content: const Text(
-//               "Are you sure you want to clear all data? This cannot be undone.",
-//             ),
-//             actions: [
-//               TextButton(
-//                 onPressed: () => Navigator.pop(context, false),
-//                 child: const Text("Cancel"),
-//               ),
-//               TextButton(
-//                 onPressed: () => Navigator.pop(context, true),
-//                 child: const Text("Clear", style: TextStyle(color: Colors.red)),
-//               ),
-//             ],
-//           ),
-//     );
-//     if (confirm == true) {
-//       setState(() => _isLoading = true);
-//       final prefs = await SharedPreferences.getInstance();
-//       await prefs.clear();
-//       setState(() => _isLoading = false);
-//       showToast(message: "All data cleared.");
-//       if (!mounted) return;
-//       Navigator.pushAndRemoveUntil(
-//         context,
-//         MaterialPageRoute(builder: (_) => const LoginScreen()),
-//         (route) => false,
-//       );
-//     }
-//   }
-
-//   Future<void> _logout() async {
-//     setState(() => _isLoading = true);
-//     await FirebaseAuth.instance.signOut();
-//     final prefs = await SharedPreferences.getInstance();
-//     await prefs.clear();
-//     setState(() => _isLoading = false);
-//     if (!mounted) return;
-//     Navigator.pushAndRemoveUntil(
-//       context,
-//       MaterialPageRoute(builder: (_) => const LoginScreen()),
-//       (route) => false,
-//     );
-//   }
-
-//   Future<void> _deleteAccount() async {
-//     bool? confirm = await showDialog(
-//       context: context,
-//       builder:
-//           (_) => AlertDialog(
-//             title: const Text("Delete Account"),
-//             content: const Text(
-//               "Are you sure you want to delete your account? This will remove all your data and cannot be undone.",
-//             ),
-//             actions: [
-//               TextButton(
-//                 onPressed: () => Navigator.pop(context, false),
-//                 child: const Text("Cancel"),
-//               ),
-//               TextButton(
-//                 onPressed: () => Navigator.pop(context, true),
-//                 child: const Text(
-//                   "Delete",
-//                   style: TextStyle(color: Colors.red),
-//                 ),
-//               ),
-//             ],
-//           ),
-//     );
-//     if (confirm == true) {
-//       setState(() => _isLoading = true);
-//       try {
-//         final user = FirebaseAuth.instance.currentUser;
-//         if (user != null) {
-//           await user.delete();
-//           final prefs = await SharedPreferences.getInstance();
-//           await prefs.clear();
-//           showToast(message: "Account deleted successfully.");
-//           if (!mounted) return;
-//           Navigator.pushAndRemoveUntil(
-//             context,
-//             MaterialPageRoute(builder: (_) => const LoginScreen()),
-//             (route) => false,
-//           );
-//         }
-//       } on FirebaseAuthException catch (e) {
-//         showToast(message: e.message ?? "Failed to delete account.");
-//       } finally {
-//         setState(() => _isLoading = false);
-//       }
-//     }
-//   }
-
-//   @override
-//   void dispose() {
-//     _nameController.dispose();
-//     _ageController.dispose();
-//     _ingredientsController.dispose();
-//     _allergiesController.dispose();
-//     _tts.stop();
-//     super.dispose();
-//   }
-
-//   @override
-//   Widget build(BuildContext context) {
-//     final theme = Theme.of(context);
-//     final textColor = theme.textTheme.bodyMedium!.color;
-
-//     return Scaffold(
-//       appBar: AppBar(
-//         title: const Text("Profile & Settings"),
-//         centerTitle: true,
-//         elevation: 0,
-//       ),
-//       body:
-//           _isLoading
-//               ? const Center(child: CircularProgressIndicator())
-//               : SingleChildScrollView(
-//                 padding: const EdgeInsets.all(16.0),
-//                 child: Form(
-//                   key: _formKey,
-//                   child: Column(
-//                     crossAxisAlignment: CrossAxisAlignment.start,
-//                     children: [
-//                       // Profile Section
-//                       Card(
-//                         elevation: 2,
-//                         shape: RoundedRectangleBorder(
-//                           borderRadius: BorderRadius.circular(12),
-//                         ),
-//                         child: Padding(
-//                           padding: const EdgeInsets.all(16.0),
-//                           child: Column(
-//                             crossAxisAlignment: CrossAxisAlignment.start,
-//                             children: [
-//                               Text(
-//                                 "Profile",
-//                                 style: TextStyle(
-//                                   color: textColor,
-//                                   fontSize: 20,
-//                                   fontWeight: FontWeight.bold,
-//                                 ),
-//                               ),
-//                               const SizedBox(height: 10),
-//                               Center(
-//                                 child: GestureDetector(
-//                                   onTap: _pickProfileImage,
-//                                   child: CircleAvatar(
-//                                     radius: 50,
-//                                     backgroundImage:
-//                                         _profileImagePath != null
-//                                             ? FileImage(
-//                                               File(_profileImagePath!),
-//                                             )
-//                                             : const AssetImage(
-//                                                   'lib/images/genie.png',
-//                                                 )
-//                                                 as ImageProvider,
-//                                     child:
-//                                         _profileImagePath == null
-//                                             ? const Icon(
-//                                               Icons.camera_alt,
-//                                               size: 30,
-//                                               color: Colors.white,
-//                                             )
-//                                             : null,
-//                                   ),
-//                                 ),
-//                               ),
-//                               const SizedBox(height: 10),
-//                               TextFormField(
-//                                 controller: _nameController,
-//                                 decoration: InputDecoration(
-//                                   labelText: "Name",
-//                                   border: OutlineInputBorder(
-//                                     borderRadius: BorderRadius.circular(8),
-//                                   ),
-//                                   labelStyle: TextStyle(color: textColor),
-//                                 ),
-//                                 maxLength: 50,
-//                                 validator: (value) {
-//                                   if (value == null || value.trim().isEmpty) {
-//                                     return "Name is required";
-//                                   }
-//                                   if (value.length > 50) {
-//                                     return "Name must be 50 characters or less";
-//                                   }
-//                                   return null;
-//                                 },
-//                               ),
-//                               const SizedBox(height: 10),
-//                               TextFormField(
-//                                 controller: _ageController,
-//                                 decoration: InputDecoration(
-//                                   labelText: "Age",
-//                                   border: OutlineInputBorder(
-//                                     borderRadius: BorderRadius.circular(8),
-//                                   ),
-//                                   labelStyle: TextStyle(color: textColor),
-//                                 ),
-//                                 keyboardType: TextInputType.number,
-//                                 maxLength: 3,
-//                                 validator: (value) {
-//                                   if (value == null || value.trim().isEmpty) {
-//                                     return "Age is required";
-//                                   }
-//                                   final age = int.tryParse(value);
-//                                   if (age == null || age <= 0 || age > 150) {
-//                                     return "Enter a valid age (1-150)";
-//                                   }
-//                                   return null;
-//                                 },
-//                               ),
-//                               const SizedBox(height: 10),
-//                               DropdownButtonFormField<String>(
-//                                 value: _selectedGender,
-//                                 decoration: InputDecoration(
-//                                   labelText: "Gender",
-//                                   border: OutlineInputBorder(
-//                                     borderRadius: BorderRadius.circular(8),
-//                                   ),
-//                                   labelStyle: TextStyle(color: textColor),
-//                                 ),
-//                                 items:
-//                                     _genderOptions.map((gender) {
-//                                       return DropdownMenuItem(
-//                                         value: gender,
-//                                         child: Text(gender),
-//                                       );
-//                                     }).toList(),
-//                                 onChanged:
-//                                     (value) =>
-//                                         setState(() => _selectedGender = value),
-//                               ),
-//                               const SizedBox(height: 10),
-//                               MultiSelectDialogField(
-//                                 items:
-//                                     _dietaryOptions
-//                                         .map(
-//                                           (option) =>
-//                                               MultiSelectItem(option, option),
-//                                         )
-//                                         .toList(),
-//                                 initialValue: _selectedDietaryPreferences,
-//                                 title: const Text("Dietary Preferences"),
-//                                 buttonText: Text(
-//                                   "Dietary Preferences",
-//                                   style: TextStyle(color: textColor),
-//                                 ),
-//                                 decoration: BoxDecoration(
-//                                   border: Border.all(color: theme.dividerColor),
-//                                   borderRadius: BorderRadius.circular(8),
-//                                 ),
-//                                 onConfirm: (values) {
-//                                   setState(
-//                                     () =>
-//                                         _selectedDietaryPreferences =
-//                                             values.cast<String>(),
-//                                   );
-//                                 },
-//                               ),
-//                               const SizedBox(height: 10),
-//                               TextFormField(
-//                                 controller: _ingredientsController,
-//                                 decoration: InputDecoration(
-//                                   labelText:
-//                                       "Available Ingredients (comma-separated)",
-//                                   border: OutlineInputBorder(
-//                                     borderRadius: BorderRadius.circular(8),
-//                                   ),
-//                                   labelStyle: TextStyle(color: textColor),
-//                                 ),
-//                                 maxLines: 2,
-//                               ),
-//                               const SizedBox(height: 10),
-//                               TextFormField(
-//                                 controller: _allergiesController,
-//                                 decoration: InputDecoration(
-//                                   labelText: "Allergies (comma-separated)",
-//                                   border: OutlineInputBorder(
-//                                     borderRadius: BorderRadius.circular(8),
-//                                   ),
-//                                   labelStyle: TextStyle(color: textColor),
-//                                 ),
-//                                 maxLines: 2,
-//                               ),
-//                               const SizedBox(height: 20),
-//                               Center(
-//                                 child: ElevatedButton(
-//                                   onPressed: _saveProfileAndSettings,
-//                                   style: ElevatedButton.styleFrom(
-//                                     padding: const EdgeInsets.symmetric(
-//                                       horizontal: 32,
-//                                       vertical: 12,
-//                                     ),
-//                                     shape: RoundedRectangleBorder(
-//                                       borderRadius: BorderRadius.circular(8),
-//                                     ),
-//                                   ),
-//                                   child: const Text(
-//                                     "Save Profile",
-//                                     style: TextStyle(fontSize: 16),
-//                                   ),
-//                                 ),
-//                               ),
-//                             ],
-//                           ),
-//                         ),
-//                       ),
-//                       const SizedBox(height: 20),
-
-//                       // Settings Section
-//                       Card(
-//                         elevation: 2,
-//                         shape: RoundedRectangleBorder(
-//                           borderRadius: BorderRadius.circular(12),
-//                         ),
-//                         child: Padding(
-//                           padding: const EdgeInsets.all(16.0),
-//                           child: Column(
-//                             crossAxisAlignment: CrossAxisAlignment.start,
-//                             children: [
-//                               Text(
-//                                 "Settings",
-//                                 style: TextStyle(
-//                                   color: textColor,
-//                                   fontSize: 20,
-//                                   fontWeight: FontWeight.bold,
-//                                 ),
-//                               ),
-//                               const SizedBox(height: 10),
-//                               SwitchListTile(
-//                                 title: Text(
-//                                   'Dark Mode',
-//                                   style: TextStyle(color: textColor),
-//                                 ),
-//                                 value: _isDarkMode,
-//                                 onChanged: _toggleTheme,
-//                                 activeColor: Colors.green,
-//                                 activeTrackColor: Colors.green.withOpacity(0.5),
-//                                 inactiveThumbColor: Colors.grey,
-//                                 inactiveTrackColor: Colors.grey.withOpacity(
-//                                   0.5,
-//                                 ),
-//                               ),
-//                               SwitchListTile(
-//                                 title: Text(
-//                                   'Notifications',
-//                                   style: TextStyle(color: textColor),
-//                                 ),
-//                                 value: _notificationsEnabled,
-//                                 onChanged: _toggleNotifications,
-//                                 activeColor: Colors.green,
-//                                 activeTrackColor: Colors.green.withOpacity(0.5),
-//                                 inactiveThumbColor: Colors.grey,
-//                                 inactiveTrackColor: Colors.grey.withOpacity(
-//                                   0.5,
-//                                 ),
-//                               ),
-//                               ListTile(
-//                                 title: Text(
-//                                   'Language',
-//                                   style: TextStyle(color: textColor),
-//                                 ),
-//                                 trailing: DropdownButton<String>(
-//                                   value: _selectedLanguage,
-//                                   items:
-//                                       _languageOptions.map((String value) {
-//                                         return DropdownMenuItem<String>(
-//                                           value: value,
-//                                           child: Text(
-//                                             value,
-//                                             style: TextStyle(color: textColor),
-//                                           ),
-//                                         );
-//                                       }).toList(),
-//                                   onChanged: (value) {
-//                                     setState(() => _selectedLanguage = value!);
-//                                     _saveProfileAndSettings();
-//                                   },
-//                                   dropdownColor:
-//                                       _isDarkMode
-//                                           ? Colors.grey[800]
-//                                           : Colors.white,
-//                                 ),
-//                               ),
-//                               ListTile(
-//                                 leading: const Icon(Icons.description),
-//                                 title: Text(
-//                                   'Terms & Conditions',
-//                                   style: TextStyle(color: textColor),
-//                                 ),
-//                                 onTap: _showTermsDialog,
-//                               ),
-//                               ListTile(
-//                                 leading: const Icon(Icons.delete),
-//                                 title: Text(
-//                                   'Clear All Data',
-//                                   style: TextStyle(color: textColor),
-//                                 ),
-//                                 onTap: _clearData,
-//                               ),
-//                               ListTile(
-//                                 leading: const Icon(Icons.delete_forever),
-//                                 title: Text(
-//                                   'Delete Account',
-//                                   style: TextStyle(color: textColor),
-//                                 ),
-//                                 onTap: _deleteAccount,
-//                               ),
-//                               ListTile(
-//                                 leading: const Icon(Icons.logout),
-//                                 title: Text(
-//                                   'Logout',
-//                                   style: TextStyle(color: textColor),
-//                                 ),
-//                                 onTap: _logout,
-//                               ),
-//                             ],
-//                           ),
-//                         ),
-//                       ),
-//                     ],
-//                   ),
-//                 ),
-//               ),
-//     );
-//   }
-// }
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -620,6 +10,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import '../theme/theme_provider.dart';
 import '../global/toast.dart';
 import 'login_screen.dart';
+import 'user_service.dart'; // Updated path
 
 class ProfileSettingsScreen extends StatefulWidget {
   const ProfileSettingsScreen({super.key});
@@ -643,6 +34,8 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
 
   final _formKey = GlobalKey<FormState>();
   final FlutterTts _tts = FlutterTts();
+  final UserService _userService = UserService(); // Add UserService
+  
   final List<String> _dietaryOptions = [
     'Vegetarian',
     'Vegan',
@@ -668,24 +61,51 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
 
   Future<void> _loadProfileAndSettings() async {
     setState(() => _isLoading = true);
+    
+    // First try to load from Firestore
+    final firestoreData = await _userService.loadUserPreferences();
+    
+    if (firestoreData != null) {
+  setState(() {
+    _nameController.text = firestoreData['name'] ?? '';
+    _ageController.text = firestoreData['age'] ?? '';
+
+    // ✅ Gender fix: only accept valid options
+    final genderValue = firestoreData['gender'];
+    if (genderValue != null && _genderOptions.contains(genderValue)) {
+      _selectedGender = genderValue;
+    } else {
+      _selectedGender = null;
+    }
+
+    _selectedDietaryPreferences =
+        List<String>.from(firestoreData['dietaryPreferences'] ?? []);
+    _ingredientsController.text =
+        (firestoreData['availableIngredients'] as List?)?.join(', ') ?? '';
+    _allergiesController.text =
+        (firestoreData['allergies'] as List?)?.join(', ') ?? '';
+    _profileImagePath = firestoreData['profileImagePath'];
+
+    // ✅ Language fix (for Voice Assistant)
+    final langValue = firestoreData['language'];
+    if (langValue != null && _languageOptions.contains(langValue)) {
+      _selectedLanguage = langValue;
+    } else {
+      _selectedLanguage = 'English';
+    }
+  });
+}
+
+    
+    // Also load local SharedPreferences for settings (theme, language, etc.)
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      _nameController.text = prefs.getString('name') ?? '';
-      _ageController.text = prefs.getString('age') ?? '';
-      _selectedGender = prefs.getString('gender');
-      _selectedDietaryPreferences =
-          prefs.getStringList('dietPreferences') ?? [];
-      _ingredientsController.text =
-          (prefs.getStringList('availableIngredients') ?? []).join(', ');
-      _allergiesController.text = (prefs.getStringList('allergies') ?? []).join(
-        ', ',
-      );
       _isDarkMode = prefs.getBool('isDarkMode') ?? false;
       _notificationsEnabled = prefs.getBool('notificationsEnabled') ?? true;
       _selectedLanguage = prefs.getString('language') ?? 'English';
-      _profileImagePath = prefs.getString('profileImagePath');
       _isLoading = false;
     });
+    
     await _tts.setLanguage(_languageCodes[_selectedLanguage] ?? 'en-US');
   }
 
@@ -693,38 +113,46 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() => _isLoading = true);
-    final prefs = await SharedPreferences.getInstance();
-    final ingredients =
-        _ingredientsController.text
-            .split(',')
-            .map((e) => e.trim())
-            .where((e) => e.isNotEmpty)
-            .toSet()
-            .toList();
-    final allergies =
-        _allergiesController.text
-            .split(',')
-            .map((e) => e.trim())
-            .where((e) => e.isNotEmpty)
-            .toSet()
-            .toList();
+    
+    final ingredients = _ingredientsController.text
+        .split(',')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toSet()
+        .toList();
+    final allergies = _allergiesController.text
+        .split(',')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toSet()
+        .toList();
 
-    await prefs.setString('name', _nameController.text.trim());
-    await prefs.setString('age', _ageController.text.trim());
-    await prefs.setString('gender', _selectedGender ?? '');
-    await prefs.setStringList('dietPreferences', _selectedDietaryPreferences);
-    await prefs.setStringList('availableIngredients', ingredients);
-    await prefs.setStringList('allergies', allergies);
-    await prefs.setBool('isDarkMode', _isDarkMode);
-    await prefs.setBool('notificationsEnabled', _notificationsEnabled);
-    await prefs.setString('language', _selectedLanguage);
-    if (_profileImagePath != null) {
-      await prefs.setString('profileImagePath', _profileImagePath!);
+    try {
+      // Save profile data to Firestore
+      await _userService.saveUserPreferences(
+        name: _nameController.text.trim(),
+        age: _ageController.text.trim(),
+        gender: _selectedGender ?? '',
+        dietaryPreferences: _selectedDietaryPreferences,
+        availableIngredients: ingredients,
+        allergies: allergies,
+        profileImagePath: _profileImagePath,
+      );
+
+      // Save app settings locally (these don't need to sync)
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('isDarkMode', _isDarkMode);
+      await prefs.setBool('notificationsEnabled', _notificationsEnabled);
+      await prefs.setString('language', _selectedLanguage);
+
+      await _tts.setLanguage(_languageCodes[_selectedLanguage] ?? 'en-US');
+      
+      showToast(message: 'Profile and settings saved!');
+    } catch (e) {
+      showToast(message: 'Error saving profile: $e');
+    } finally {
+      setState(() => _isLoading = false);
     }
-
-    await _tts.setLanguage(_languageCodes[_selectedLanguage] ?? 'en-US');
-    setState(() => _isLoading = false);
-    showToast(message: 'Profile and settings saved!');
   }
 
   Future<void> _toggleTheme(bool value) async {
@@ -799,10 +227,25 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     );
     if (confirm == true) {
       setState(() => _isLoading = true);
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.clear();
-      setState(() => _isLoading = false);
-      showToast(message: "All data cleared.");
+      
+      try {
+        // Clear Firestore data
+        final userId = FirebaseAuth.instance.currentUser?.uid;
+        if (userId != null) {
+          await _userService.clearUserData();
+        }
+        
+        // Clear local data
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.clear();
+        
+        showToast(message: "All data cleared.");
+      } catch (e) {
+        showToast(message: "Error clearing data: $e");
+      } finally {
+        setState(() => _isLoading = false);
+      }
+      
       if (!mounted) return;
       Navigator.pushAndRemoveUntil(
         context,
@@ -855,9 +298,16 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
       try {
         final user = FirebaseAuth.instance.currentUser;
         if (user != null) {
+          // Delete Firestore data
+          await _userService.clearUserData();
+          
+          // Delete Firebase Auth account
           await user.delete();
+          
+          // Clear local data
           final prefs = await SharedPreferences.getInstance();
           await prefs.clear();
+          
           showToast(message: "Account deleted successfully.");
           if (!mounted) return;
           Navigator.pushAndRemoveUntil(
@@ -895,7 +345,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                                 ? FileImage(File(_profileImagePath!))
                                 : const AssetImage('lib/images/genie.png')
                                     as ImageProvider,
-                        child: Icon(
+                        child: const Icon(
                           Icons.camera_alt,
                           size: 30,
                           color: Colors.white,
@@ -1011,7 +461,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                 onPressed: () async {
                   if (_formKey.currentState!.validate()) {
                     await _saveProfileAndSettings();
-                    Navigator.pop(ctx);
+                    if (ctx.mounted) Navigator.pop(ctx);
                     setState(() {});
                   }
                 },
@@ -1067,15 +517,24 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                 children: [
                   ListTile(
                     title: const Text('Terms & Conditions'),
-                    onTap: _showTermsDialog,
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _showTermsDialog();
+                    },
                   ),
                   ListTile(
                     title: const Text('Clear All Data'),
-                    onTap: _clearData,
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _clearData();
+                    },
                   ),
                   ListTile(
                     title: const Text('Delete Account'),
-                    onTap: _deleteAccount,
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _deleteAccount();
+                    },
                   ),
                 ],
               ),
@@ -1141,7 +600,6 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final textColor = theme.textTheme.bodyMedium!.color;
     final name =
         _nameController.text.isEmpty ? 'John Doe' : _nameController.text;
     final email =
@@ -1173,7 +631,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
                     ),
                     title: Text(
                       name,
-                      style: TextStyle(fontWeight: FontWeight.bold),
+                      style: const TextStyle(fontWeight: FontWeight.bold),
                     ),
                     subtitle: Text(email),
                     trailing: IconButton(

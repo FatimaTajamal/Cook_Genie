@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/firebase_auth_service.dart';
+import 'user_service.dart'; // Add this import
 import '../widgets/form_container_widget.dart';
 import '../global/toast.dart';
 import '../pages/login_screen.dart';
-import '../pages/main_screen.dart'; // ✅ Navigates user to main screen after signup
+import '../pages/main_screen.dart';
 
 class SignUpPage extends StatefulWidget {
   const SignUpPage({super.key});
@@ -15,6 +16,7 @@ class SignUpPage extends StatefulWidget {
 
 class _SignUpPageState extends State<SignUpPage> {
   final FirebaseAuthService _auth = FirebaseAuthService();
+  final UserService _userService = UserService(); // Add this
 
   final TextEditingController _firstNameController = TextEditingController();
   final TextEditingController _lastNameController = TextEditingController();
@@ -206,38 +208,74 @@ class _SignUpPageState extends State<SignUpPage> {
       return;
     }
 
-try {
-User? user = await _auth.signUpWithEmailAndPassword(email, password);
+    try {
+      User? user = await _auth.signUpWithEmailAndPassword(email, password);
 
-// Always get the current signed-in user (sometimes _auth wrapper may not return it correctly)
-User? currentUser = FirebaseAuth.instance.currentUser;
+      // Always get the current signed-in user
+      User? currentUser = FirebaseAuth.instance.currentUser;
 
-if (currentUser != null) {
-  await currentUser.sendEmailVerification();
-  print("Verification email sent to: ${currentUser.email}");
+      if (currentUser != null) {
+        // 🔥 Create initial Firestore document for the new user
+        try {
+          await _userService.saveUserPreferences(
+            name: '$firstName $lastName', // Combine first and last name
+            age: '',
+            gender: '',
+            dietaryPreferences: [],
+            availableIngredients: [],
+            allergies: [],
+            profileImagePath: null,
+          );
+          print("✅ User profile created in Firestore for: ${currentUser.email}");
+        } catch (e) {
+          print("❌ Error creating Firestore profile: $e");
+          // Don't fail signup if Firestore fails, just log it
+        }
 
-    showToast(
-      message:
-          "Account created! Please check your email to verify your account.",
-    );
+        // Send verification email
+        await currentUser.sendEmailVerification();
+        print("📧 Verification email sent to: ${currentUser.email}");
 
-    // Go to LoginScreen (don’t auto-login until verified)
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (context) => const LoginScreen()),
-      (route) => false,
-    );
-  } else {
-    showToast(message: "Signup failed. Try again.");
-  }
-} on FirebaseAuthException catch (e) {
-  showToast(message: e.message ?? "Signup failed.");
-} catch (e) {
-  showToast(message: "An unexpected error occurred. Please try again.");
-} finally {
-  setState(() {
-    _isSigningUp = false;
-  });
-}
+        showToast(
+          message:
+              "Account created! Please check your email to verify your account.",
+        );
+
+        // Go to LoginScreen (don't auto-login until verified)
+        if (!mounted) return;
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (context) => const LoginScreen()),
+          (route) => false,
+        );
+      } else {
+        showToast(message: "Signup failed. Try again.");
+      }
+    } on FirebaseAuthException catch (e) {
+      String errorMessage = "Signup failed.";
+      
+      switch (e.code) {
+        case 'weak-password':
+          errorMessage = "Password is too weak. Use at least 6 characters.";
+          break;
+        case 'email-already-in-use':
+          errorMessage = "An account already exists with this email.";
+          break;
+        case 'invalid-email':
+          errorMessage = "Invalid email address.";
+          break;
+        default:
+          errorMessage = e.message ?? "Signup failed.";
+      }
+      
+      showToast(message: errorMessage);
+    } catch (e) {
+      print("❌ Unexpected error during signup: $e");
+      showToast(message: "An unexpected error occurred. Please try again.");
+    } finally {
+      setState(() {
+        _isSigningUp = false;
+      });
+    }
   }
 }

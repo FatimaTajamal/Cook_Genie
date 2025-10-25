@@ -37,6 +37,9 @@ class VoiceAssistantController extends GetxController {
   // Home screen listening state
   bool _isHomeListening = false;
   bool get isHomeListening => _isHomeListening;
+  
+  // Home auto-restart control
+  bool _homeAutoRestartEnabled = true;
 
   @override
   void onInit() {
@@ -105,10 +108,10 @@ class VoiceAssistantController extends GetxController {
           _isListening = false;
           update();
           
-          // Restart listening if necessary
+          // Restart listening if necessary AND home auto-restart is enabled
           if (_isRecipeMode) {
             _restartRecipeListening();
-          } else if (_isHomeListening) {
+          } else if (_isHomeListening && _homeAutoRestartEnabled) {
             _restartHomeListening();
           }
         }
@@ -118,10 +121,10 @@ class VoiceAssistantController extends GetxController {
         _isListening = false;
         update();
         
-        // Restart listening on error
+        // Restart listening on error AND home auto-restart is enabled
         if (_isRecipeMode) {
           _restartRecipeListening();
-        } else if (_isHomeListening) {
+        } else if (_isHomeListening && _homeAutoRestartEnabled) {
           _restartHomeListening();
         }
       },
@@ -361,6 +364,16 @@ class VoiceAssistantController extends GetxController {
     }
   }
 
+  void disableHomeAutoRestart() {
+    _homeAutoRestartEnabled = false;
+    print("🚫 Home auto-restart disabled");
+  }
+
+  void enableHomeAutoRestart() {
+    _homeAutoRestartEnabled = true;
+    print("✅ Home auto-restart enabled");
+  }
+
   void _startHomeListeningSession({List<Map<String, dynamic>>? savedRecipes}) async {
     if (_isListening || _isRecipeMode || !_isHomeListening) return;
 
@@ -412,10 +425,12 @@ class VoiceAssistantController extends GetxController {
   }
 
   void _restartHomeListening({List<Map<String, dynamic>>? savedRecipes}) {
-    if (_isHomeListening && !_isListening && !_isRecipeMode) {
+    if (_isHomeListening && !_isListening && !_isRecipeMode && _homeAutoRestartEnabled) {
       Future.delayed(const Duration(milliseconds: 300), () {
         _startHomeListeningSession(savedRecipes: savedRecipes);
       });
+    } else if (!_homeAutoRestartEnabled) {
+      print("⏸️ Home restart skipped - auto-restart disabled");
     }
   }
 
@@ -425,6 +440,15 @@ class VoiceAssistantController extends GetxController {
     _isVoiceMode = false;
     update();
   }
+  // Add this method to VoiceAssistantController
+void stopAllSpeechRecognition() {
+  _speech.stop();
+  _isListening = false;
+  _isHomeListening = false;
+  _isRecipeMode = false;
+  print("🛑 All speech recognition stopped");
+  update();
+}
 
   // Legacy methods for backward compatibility, now aliasing to new methods
   void enableContinuousListening({List<Map<String, dynamic>>? savedRecipes}) {
