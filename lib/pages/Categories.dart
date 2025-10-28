@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'RecipeSearch.dart'; // RecipeService (Gemini + caching)
 import 'RecipeScreen.dart'; // detail page
+import 'firestore_saved_recipes_service.dart'; // Firestore service
 
 class CategoryRecipeScreen extends StatefulWidget {
   final String category;
@@ -47,7 +47,8 @@ class _CategoryRecipeScreenState extends State<CategoryRecipeScreen> {
 
       // Load the first page (3) only
       await _loadNextPage(initial: true);
-    } catch (_) {
+    } catch (e) {
+      print('❌ Error fetching category suggestions: $e');
       if (mounted) {
         setState(() {
           isLoading = false;
@@ -87,11 +88,7 @@ class _CategoryRecipeScreenState extends State<CategoryRecipeScreen> {
 
       if (!mounted) return;
 
-      // Optionally persist to your cache (as your original code did)
-      for (final r in nextRecipes) {
-        await RecipeService.saveRecipeAndPersist(r);
-      }
-
+      // NO internal storage - just keep in memory for this session
       setState(() {
         categoryRecipes.addAll(nextRecipes);
         _applyFilter(_searchQuery); // refresh filtered view
@@ -99,7 +96,8 @@ class _CategoryRecipeScreenState extends State<CategoryRecipeScreen> {
         isLoading = false;
         _loadingMore = false;
       });
-    } catch (_) {
+    } catch (e) {
+      print('❌ Error loading next page: $e');
       if (!mounted) return;
       setState(() {
         isLoading = false;
@@ -114,11 +112,10 @@ class _CategoryRecipeScreenState extends State<CategoryRecipeScreen> {
       filteredRecipes = List<Map<String, dynamic>>.from(categoryRecipes);
     } else {
       final lower = query.trim().toLowerCase();
-      filteredRecipes =
-          categoryRecipes.where((recipe) {
-            final title = (recipe['name'] ?? '').toString().toLowerCase();
-            return title.contains(lower);
-          }).toList();
+      filteredRecipes = categoryRecipes.where((recipe) {
+        final title = (recipe['name'] ?? '').toString().toLowerCase();
+        return title.contains(lower);
+      }).toList();
     }
   }
 
@@ -129,17 +126,16 @@ class _CategoryRecipeScreenState extends State<CategoryRecipeScreen> {
   }
 
   void openRecipe(Map<String, dynamic> recipe) async {
-    // keep your caching behavior
-    await RecipeService.saveRecipeAndPersist(recipe);
+    // NO internal storage caching - only Firestore for saved recipes
     if (!mounted) return;
+    
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder:
-            (_) => RecipeScreen(
-              savedRecipes: categoryRecipes,
-              initialRecipe: recipe,
-            ),
+        builder: (_) => RecipeScreen(
+          savedRecipes: categoryRecipes,
+          initialRecipe: recipe,
+        ),
       ),
     );
   }
@@ -174,22 +170,40 @@ class _CategoryRecipeScreenState extends State<CategoryRecipeScreen> {
             elevation: 4,
             child: ListTile(
               onTap: () => openRecipe(recipe),
+              leading: recipe['image_url'] != null && 
+                      recipe['image_url'].toString().isNotEmpty
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.network(
+                        recipe['image_url'],
+                        width: 60,
+                        height: 60,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const Icon(
+                          Icons.restaurant,
+                          size: 60,
+                        ),
+                      ),
+                    )
+                  : const Icon(Icons.restaurant, size: 60),
               title: Text(
                 recipe['name']?.toString() ?? 'No Title',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.bold),
               ),
-              subtitle:
-                  (recipe['ingredients'] is List)
-                      ? Text(
-                        ((recipe['ingredients'] as List)
-                                .map((i) => i['name'])
-                                .whereType<String>()
-                                .take(3)
-                                .join(', ')) +
-                            '…',
-                      )
-                      : null,
+              subtitle: (recipe['ingredients'] is List)
+                  ? Text(
+                      ((recipe['ingredients'] as List)
+                              .map((i) => i['name'])
+                              .whereType<String>()
+                              .take(3)
+                              .join(', ')) +
+                          '…',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    )
+                  : null,
               trailing: const Icon(Icons.chevron_right),
             ),
           );
@@ -211,17 +225,19 @@ class _CategoryRecipeScreenState extends State<CategoryRecipeScreen> {
         width: double.infinity,
         child: ElevatedButton(
           onPressed: _loadingMore ? null : () => _loadNextPage(),
-          child:
-              _loadingMore
-                  ? const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 6),
-                    child: SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  )
-                  : const Text("Load more"),
+          style: ElevatedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+          ),
+          child: _loadingMore
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Text("Load more"),
         ),
       ),
     );
@@ -229,28 +245,43 @@ class _CategoryRecipeScreenState extends State<CategoryRecipeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final body =
-        isLoading && categoryRecipes.isEmpty
-            ? const Center(child: CircularProgressIndicator())
-            : Column(
-              children: [
-                _buildSearchBar(),
-                const SizedBox(height: 8),
-                if (filteredRecipes.isEmpty && categoryRecipes.isNotEmpty)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                    child: Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text(
-                        "No match found in loaded recipes.",
-                        style: TextStyle(color: Colors.black54),
-                      ),
+    final body = isLoading && categoryRecipes.isEmpty
+        ? const Center(child: CircularProgressIndicator())
+        : Column(
+            children: [
+              _buildSearchBar(),
+              const SizedBox(height: 8),
+              if (filteredRecipes.isEmpty && categoryRecipes.isNotEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      "No match found in loaded recipes.",
+                      style: TextStyle(color: Colors.black54),
                     ),
                   ),
-                _buildList(),
-                _buildLoadMore(),
-              ],
-            );
+                )
+              else if (filteredRecipes.isEmpty && categoryRecipes.isEmpty)
+                const Expanded(
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.restaurant_menu, size: 64, color: Colors.grey),
+                        SizedBox(height: 16),
+                        Text(
+                          'No recipes found',
+                          style: TextStyle(fontSize: 18, color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              if (filteredRecipes.isNotEmpty) _buildList(),
+              _buildLoadMore(),
+            ],
+          );
 
     return Scaffold(
       appBar: AppBar(

@@ -1,4 +1,6 @@
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'firestore_saved_recipes_service.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:get/get.dart';
@@ -8,6 +10,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'RecipeSearch.dart';
 import 'grocery_list_screen.dart';
 import 'voice_assistant_controller.dart';
+
 
 class RecipeScreen extends StatefulWidget {
   final List<Map<String, dynamic>> savedRecipes;
@@ -253,19 +256,31 @@ class _RecipeScreenState extends State<RecipeScreen> {
     return buffer.toString();
   }
 
-  void _toggleFavorite() {
-    if (_recipe == null) return;
+Future<void> _toggleFavorite() async {
+  if (_recipe == null) return;
 
-    setState(() {
-      if (_isFavorite) {
-        widget.savedRecipes.removeWhere((r) => r['name'] == _recipe!['name']);
-        _isFavorite = false;
-      } else {
-        widget.savedRecipes.add(_recipe!);
-        _isFavorite = true;
-      }
-    });
+  try {
+    final isAlreadySaved = await FirestoreSavedRecipesService.isRecipeSaved(_recipe!['name'] ?? '');
+    if (isAlreadySaved) {
+      await FirestoreSavedRecipesService.removeRecipe(_recipe!);
+      setState(() => _isFavorite = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Removed ${_recipe!['name']} from saved recipes.')),
+      );
+    } else {
+      await FirestoreSavedRecipesService.saveRecipe(_recipe!);
+      setState(() => _isFavorite = true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Saved ${_recipe!['name']} to your recipes!')),
+      );
+    }
+  } catch (e) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Error saving recipe: $e')),
+    );
   }
+}
+
 
   // Initialize and start voice search
   Future<void> _initializeAndStartVoiceSearch() async {

@@ -341,49 +341,6 @@ class RecipeService {
     }
   }
 
-  // 🧠 MEMORY CACHE METHODS
-  static Future<void> saveRecipeAndPersist(
-    Map<String, dynamic> recipeData,
-  ) async {
-    if (recipeData["name"] != null) {
-      if (recipeData["image_url"] == null ||
-          recipeData["image_url"].toString().isEmpty) {
-        final imageUrl = await fetchImageUrl(recipeData["name"]);
-        recipeData["image_url"] = imageUrl;
-      }
-
-      _recipeCache[recipeData["name"]] = recipeData;
-      await saveRecipesToStorage();
-    }
-  }
-
-  static Future<void> saveRecipesToStorage() async {
-    final prefs = await SharedPreferences.getInstance();
-    final List<String> recipes =
-        _recipeCache.values.map((recipe) => jsonEncode(recipe)).toList();
-    await prefs.setStringList('saved_recipes', recipes);
-  }
-
-  static Future<void> loadRecipesFromStorage() async {
-    final prefs = await SharedPreferences.getInstance();
-    final List<String>? recipes = prefs.getStringList('saved_recipes');
-    if (recipes != null) {
-      for (var recipeJson in recipes) {
-        final Map<String, dynamic> recipe = jsonDecode(recipeJson);
-        if (recipe["name"] != null) {
-          _recipeCache[recipe["name"]] = recipe;
-        }
-      }
-    }
-  }
-
-  static void removeRecipe(String name) {
-    _recipeCache.remove(name);
-  }
-
-  static List<Map<String, dynamic>> getSavedRecipes() {
-    return _recipeCache.values.toList();
-  }
 
   static Future<List<String>> getRecipeSuggestionsByCategoryAndPreference({
     required String category,

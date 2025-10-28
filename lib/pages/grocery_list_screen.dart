@@ -1,64 +1,144 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
+
 import 'package:get/get.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../theme/theme_provider.dart';
-import 'grocery_storage.dart';
 
 class GroceryController extends GetxController {
   var groceryList = <Map<String, dynamic>>[].obs;
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _sub;
 
   @override
   void onInit() {
     super.onInit();
-    loadFromStorage();
+    _listenToGroceryList();
   }
 
-  void addItem(String item) {
-    if (item.isNotEmpty && !groceryList.any((e) => e['name'] == item)) {
-      groceryList.add({"name": item, "checked": false});
-      GroceryStorage().addIngredients([item]);
+  @override
+  void onClose() {
+    _sub?.cancel();
+    super.onClose();
+  }
+
+  String get userId => _auth.currentUser?.uid ?? "";
+
+  void _listenToGroceryList() {
+    if (userId.isEmpty) {
+      groceryList.clear();
+      return;
     }
+
+    final ref = _firestore
+        .collection('users')
+        .doc(userId)
+        .collection('groceryList')
+        .orderBy('name'); // order optional
+
+    _sub?.cancel();
+    _sub = ref.snapshots().listen((snapshot) {
+      groceryList.value = snapshot.docs
+          .map((doc) => {
+                "id": doc.id,
+                "name": doc.data()['name'] ?? '',
+                "checked": doc.data()['checked'] ?? false,
+              })
+          .toList();
+    }, onError: (err) {
+      // handle/ log errors if needed
+      print("Grocery list listener error: $err");
+    });
   }
 
-  void addItems(List<String> items) {
-    bool added = false;
-    for (var item in items) {
-      if (item.isNotEmpty && !groceryList.any((e) => e['name'] == item)) {
-        groceryList.add({"name": item, "checked": false});
-        added = true;
+  /// Add a single item (skips duplicates)
+  Future<void> addItem(String item) async {
+    if (item.isEmpty || userId.isEmpty) return;
+    final exists = groceryList.any((e) => e['name'].toString().toLowerCase() == item.toLowerCase());
+    if (exists) return;
+
+    await _firestore
+        .collection('users')
+        .doc(userId)
+        .collection('groceryList')
+        .add({"name": item, "checked": false, "createdAt": FieldValue.serverTimestamp()});
+  }
+
+  /// ✅ Add multiple items (skips duplicates) — this method was missing previously
+  Future<void> addItems(List<String> items) async {
+    if (items.isEmpty || userId.isEmpty) return;
+
+    // Normalize and filter unique new items (case-insensitive)
+    final existingNames = groceryList.map((e) => e['name'].toString().toLowerCase()).toSet();
+    final newItems = <String>[];
+    for (var raw in items) {
+      final item = raw.trim();
+      if (item.isEmpty) continue;
+      if (!existingNames.contains(item.toLowerCase())) {
+        existingNames.add(item.toLowerCase());
+        newItems.add(item);
       }
     }
-    if (added) {
-      groceryList.refresh();
-      GroceryStorage().addIngredients(items);
+    if (newItems.isEmpty) return;
+
+    // Use batched writes for efficiency
+    final batch = _firestore.batch();
+    final collectionRef = _firestore.collection('users').doc(userId).collection('groceryList');
+
+    for (var item in newItems) {
+      final docRef = collectionRef.doc(); // new doc id
+      batch.set(docRef, {"name": item, "checked": false, "createdAt": FieldValue.serverTimestamp()});
     }
+
+    await batch.commit();
   }
 
-  void toggleCheck(int index) {
-    groceryList[index]["checked"] = !groceryList[index]["checked"];
-    groceryList.refresh();
+  /// Toggle checked state for an item (uses doc id)
+  Future<void> toggleCheck(int index) async {
+    if (userId.isEmpty) return;
+    if (index < 0 || index >= groceryList.length) return;
+
+    final item = groceryList[index];
+    final docId = item["id"];
+    final currentChecked = item["checked"] ?? false;
+
+    await _firestore
+        .collection('users')
+        .doc(userId)
+        .collection('groceryList')
+        .doc(docId)
+        .update({"checked": !currentChecked});
   }
 
-  void removeItem(int index) async {
-    final removed = groceryList.removeAt(index);
-    final existing = await GroceryStorage().getIngredients();
-    existing.remove(removed["name"]);
-    await GroceryStorage.overwriteIngredients(existing);
+  /// Remove an item by index (uses doc id)
+  Future<void> removeItem(int index) async {
+    if (userId.isEmpty) return;
+    if (index < 0 || index >= groceryList.length) return;
+
+    final docId = groceryList[index]["id"];
+    await _firestore
+        .collection('users')
+        .doc(userId)
+        .collection('groceryList')
+        .doc(docId)
+        .delete();
   }
 
-  void clearAll() async {
-    groceryList.clear();
-    await GroceryStorage().clearIngredients();
-  }
+  /// Clear all items for the user
+  Future<void> clearAll() async {
+    if (userId.isEmpty) return;
 
-  void loadFromStorage() async {
-    final savedItems = await GroceryStorage().getIngredients();
-    for (var item in savedItems) {
-      if (!groceryList.any((e) => e['name'] == item)) {
-        groceryList.add({"name": item, "checked": false});
-      }
+    final ref = _firestore.collection('users').doc(userId).collection('groceryList');
+    final snapshot = await ref.get();
+    final batch = _firestore.batch();
+    for (var doc in snapshot.docs) {
+      batch.delete(doc.reference);
     }
+    await batch.commit();
   }
 }
 
@@ -96,45 +176,42 @@ class GroceryListScreen extends StatelessWidget {
             onPressed: () async {
               final confirm = await showDialog<bool>(
                 context: context,
-                builder:
-                    (_) => AlertDialog(
-                      title: Text(
-                        "Clear Grocery List",
-                        style: TextStyle(
-                          color: Theme.of(context).textTheme.titleLarge?.color,
-                        ),
-                      ),
-                      content: Text(
-                        "Are you sure you want to remove all items?",
+                builder: (_) => AlertDialog(
+                  title: Text(
+                    "Clear Grocery List",
+                    style: TextStyle(
+                      color: Theme.of(context).textTheme.titleLarge?.color,
+                    ),
+                  ),
+                  content: Text(
+                    "Are you sure you want to remove all items?",
+                    style: TextStyle(
+                      color: Theme.of(context).textTheme.bodyMedium?.color,
+                    ),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: Text(
+                        "Cancel",
                         style: TextStyle(
                           color: Theme.of(context).textTheme.bodyMedium?.color,
                         ),
                       ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, false),
-                          child: Text(
-                            "Cancel",
-                            style: TextStyle(
-                              color:
-                                  Theme.of(context).textTheme.bodyMedium?.color,
-                            ),
-                          ),
-                        ),
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, true),
-                          child: Text(
-                            "Clear",
-                            style: TextStyle(
-                              color:
-                                  Theme.of(context).textTheme.bodyMedium?.color,
-                            ),
-                          ),
-                        ),
-                      ],
                     ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: Text(
+                        "Clear",
+                        style: TextStyle(
+                          color: Theme.of(context).textTheme.bodyMedium?.color,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               );
-              if (confirm == true) controller.clearAll();
+              if (confirm == true) await controller.clearAll();
             },
           ),
         ],
@@ -188,14 +265,16 @@ class GroceryListScreen extends StatelessWidget {
               decoration: InputDecoration(
                 hintText: "Add grocery item...",
                 hintStyle: TextStyle(
-                  color: Theme.of(
-                    context,
-                  ).textTheme.bodyMedium?.color?.withOpacity(0.5),
+                  color: Theme.of(context)
+                      .textTheme
+                      .bodyMedium
+                      ?.color
+                      ?.withOpacity(0.5),
                 ),
                 border: InputBorder.none,
               ),
-              onSubmitted: (val) {
-                controller.addItem(val.trim());
+              onSubmitted: (val) async {
+                await controller.addItem(val.trim());
                 input.clear();
               },
             ),
@@ -206,8 +285,8 @@ class GroceryListScreen extends StatelessWidget {
               color: Colors.deepOrange,
               size: 30,
             ),
-            onPressed: () {
-              controller.addItem(input.text.trim());
+            onPressed: () async {
+              await controller.addItem(input.text.trim());
               input.clear();
             },
           ),
@@ -236,9 +315,11 @@ class GroceryListScreen extends StatelessWidget {
                   "Your grocery list is empty",
                   style: GoogleFonts.poppins(
                     fontSize: 16,
-                    color: Theme.of(
-                      context,
-                    ).textTheme.bodyMedium?.color?.withOpacity(0.6),
+                    color: Theme.of(context)
+                        .textTheme
+                        .bodyMedium
+                        ?.color
+                        ?.withOpacity(0.6),
                   ),
                 ),
               ],
@@ -252,7 +333,7 @@ class GroceryListScreen extends StatelessWidget {
           itemBuilder: (context, index) {
             final item = controller.groceryList[index];
             return Slidable(
-              key: ValueKey(item["name"]),
+              key: ValueKey(item["id"]),
               endActionPane: ActionPane(
                 motion: const DrawerMotion(),
                 children: [
@@ -290,12 +371,11 @@ class GroceryListScreen extends StatelessWidget {
                       fontSize: 17,
                       decoration:
                           item["checked"] ? TextDecoration.lineThrough : null,
-                      color:
-                          item["checked"]
-                              ? Theme.of(
-                                context,
-                              ).textTheme.bodyMedium?.color?.withOpacity(0.6)
-                              : Theme.of(context).textTheme.bodyMedium?.color,
+                      color: item["checked"]
+                          ? Theme.of(
+                              context,
+                            ).textTheme.bodyMedium?.color?.withOpacity(0.6)
+                          : Theme.of(context).textTheme.bodyMedium?.color,
                     ),
                   ),
                 ),

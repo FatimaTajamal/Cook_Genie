@@ -1,12 +1,15 @@
 import 'package:flutter/foundation.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'RecipeSearch.dart';
 import 'RecipeScreen.dart';
 import 'grocery_list_screen.dart';
+import 'user_service.dart'; // Add this import
+
 
 class IngredientSearchScreen extends StatefulWidget {
   final List<Map<String, dynamic>> savedRecipes;
@@ -20,6 +23,8 @@ class IngredientSearchScreen extends StatefulWidget {
 class _IngredientSearchScreenState extends State<IngredientSearchScreen> {
   final TextEditingController _controller = TextEditingController();
   final stt.SpeechToText _speech = stt.SpeechToText();
+  final UserService _userService = UserService(); // Add this
+  
   List<Map<String, dynamic>> _recipes = [];
   List<String> _ingredients = [];
   bool _isLoading = false;
@@ -31,24 +36,44 @@ class _IngredientSearchScreenState extends State<IngredientSearchScreen> {
     _loadSavedIngredients();
   }
 
+  // 🔥 Load ingredients from Firestore
   Future<void> _loadSavedIngredients() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _ingredients = prefs.getStringList('availableIngredients') ?? [];
-      _controller.text = _ingredients.join(', ');
-    });
+    try {
+      final ingredients = await _userService.getAvailableIngredients();
+      setState(() {
+        _ingredients = ingredients;
+        _controller.text = _ingredients.join(', ');
+      });
+    } catch (e) {
+      print('❌ Error loading ingredients: $e');
+    }
   }
 
+  // 🔥 Save ingredients to Firestore
   Future<void> _saveIngredients() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList('availableIngredients', _ingredients);
+    try {
+      final userId = FirebaseAuth.instance.currentUser?.uid;
+      if (userId == null) return;
+
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId)
+          .update({
+        'availableIngredients': _ingredients,
+        'lastUpdated': FieldValue.serverTimestamp(),
+      });
+      
+      print('✅ Ingredients saved to Firestore');
+    } catch (e) {
+      print('❌ Error saving ingredients: $e');
+    }
   }
 
   void _addIngredient(String input) {
     if (input.isNotEmpty) {
-      final newIngredients = input.split(',').map((e) => e.trim()).toList();
+      final newIngredients = input.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
       setState(() {
-        _ingredients = _ingredients = <String>{..._ingredients, ...newIngredients}.toList();
+        _ingredients = <String>{..._ingredients, ...newIngredients}.toList();
         _controller.text = _ingredients.join(', ');
       });
       _saveIngredients();
