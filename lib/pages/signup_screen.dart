@@ -16,14 +16,13 @@ class SignUpPage extends StatefulWidget {
 
 class _SignUpPageState extends State<SignUpPage> {
   final FirebaseAuthService _auth = FirebaseAuthService();
-  final UserService _userService = UserService(); // Add this
+  final UserService _userService = UserService();
 
   final TextEditingController _firstNameController = TextEditingController();
   final TextEditingController _lastNameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-  final TextEditingController _confirmPasswordController =
-      TextEditingController();
+  final TextEditingController _confirmPasswordController = TextEditingController();
 
   bool _isSigningUp = false;
 
@@ -35,6 +34,11 @@ class _SignUpPageState extends State<SignUpPage> {
     _passwordController.dispose();
     _confirmPasswordController.dispose();
     super.dispose();
+  }
+
+  bool isEmailValid(String email) {
+    final emailRegex = RegExp(r'^[^@]+@[^@]+\.[^@]+');
+    return emailRegex.hasMatch(email);
   }
 
   @override
@@ -123,18 +127,17 @@ class _SignUpPageState extends State<SignUpPage> {
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Center(
-                        child:
-                            _isSigningUp
-                                ? const CircularProgressIndicator(
+                        child: _isSigningUp
+                            ? const CircularProgressIndicator(
+                                color: Colors.white,
+                              )
+                            : const Text(
+                                "Sign Up",
+                                style: TextStyle(
                                   color: Colors.white,
-                                )
-                                : const Text(
-                                  "Sign Up",
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                  ),
+                                  fontWeight: FontWeight.bold,
                                 ),
+                              ),
                       ),
                     ),
                   ),
@@ -200,6 +203,14 @@ class _SignUpPageState extends State<SignUpPage> {
       return;
     }
 
+    if (!isEmailValid(email)) {
+      showToast(message: "Please enter a valid email address");
+      setState(() {
+        _isSigningUp = false;
+      });
+      return;
+    }
+
     if (password != confirmPassword) {
       showToast(message: "Passwords do not match");
       setState(() {
@@ -211,14 +222,16 @@ class _SignUpPageState extends State<SignUpPage> {
     try {
       User? user = await _auth.signUpWithEmailAndPassword(email, password);
 
-      // Always get the current signed-in user
       User? currentUser = FirebaseAuth.instance.currentUser;
 
       if (currentUser != null) {
-        // 🔥 Create initial Firestore document for the new user
+        // Reload user to ensure fresh data before sending verification email
+        await currentUser.reload();
+        currentUser = FirebaseAuth.instance.currentUser;
+
         try {
           await _userService.saveUserPreferences(
-            name: '$firstName $lastName', // Combine first and last name
+            name: '$firstName $lastName',
             age: '',
             gender: '',
             dietaryPreferences: [],
@@ -226,22 +239,38 @@ class _SignUpPageState extends State<SignUpPage> {
             allergies: [],
             profileImagePath: null,
           );
-          print("✅ User profile created in Firestore for: ${currentUser.email}");
+          print("✅ User profile created in Firestore for: ${currentUser!.email}");
         } catch (e) {
           print("❌ Error creating Firestore profile: $e");
-          // Don't fail signup if Firestore fails, just log it
+          // Continue signup even if saving profile fails
         }
 
-        // Send verification email
-        await currentUser.sendEmailVerification();
-        print("📧 Verification email sent to: ${currentUser.email}");
+        if (currentUser != null && !currentUser.emailVerified) {
+          try {
+            final actionCodeSettings = ActionCodeSettings(
+              url: 'https://cook-genie-2600f.web.app/verify', // Your Firebase Hosting URL or dynamic link
+              handleCodeInApp: true,
+              androidPackageName: 'com.yourcompany.yourapp', // TODO: Replace with your Android package name
+              androidInstallApp: true,
+              androidMinimumVersion: '12',
+            );
+
+            await currentUser.sendEmailVerification(actionCodeSettings);
+            print("📧 Verification email sent to: ${currentUser.email}");
+          } catch (e) {
+            print("❌ Failed to send verification email: $e");
+            showToast(message: "Failed to send verification email. Please try again.");
+            setState(() {
+              _isSigningUp = false;
+            });
+            return;
+          }
+        }
 
         showToast(
-          message:
-              "Account created! Please check your email to verify your account.",
+          message: "Account created! Please check your email to verify your account.",
         );
 
-        // Go to LoginScreen (don't auto-login until verified)
         if (!mounted) return;
         Navigator.pushAndRemoveUntil(
           context,
@@ -253,7 +282,7 @@ class _SignUpPageState extends State<SignUpPage> {
       }
     } on FirebaseAuthException catch (e) {
       String errorMessage = "Signup failed.";
-      
+
       switch (e.code) {
         case 'weak-password':
           errorMessage = "Password is too weak. Use at least 6 characters.";
@@ -267,7 +296,7 @@ class _SignUpPageState extends State<SignUpPage> {
         default:
           errorMessage = e.message ?? "Signup failed.";
       }
-      
+
       showToast(message: errorMessage);
     } catch (e) {
       print("❌ Unexpected error during signup: $e");

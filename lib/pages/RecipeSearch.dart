@@ -7,7 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class RecipeService {
-  static const String geminiApiKey = "AIzaSyC7ofHrIq8vePUBb7ExI5GgzHM7qXdf3Zw";
+  static const String geminiApiKey = "AIzaSyDh8gND41pOMzHXuSNOohL7s9PBecYinEE";
   static const String geminiUrl =
       "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$geminiApiKey";
 

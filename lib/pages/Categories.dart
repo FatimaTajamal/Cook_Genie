@@ -20,11 +20,11 @@ class _CategoryRecipeScreenState extends State<CategoryRecipeScreen> {
   List<Map<String, dynamic>> categoryRecipes = [];
   List<Map<String, dynamic>> filteredRecipes = [];
 
-  // Paging state
+
   static const int _pageSize = 3;
   int _loadedCount = 0;
-  bool isLoading = true; // first load
-  bool _loadingMore = false; // subsequent loads
+  bool isLoading = true; 
+  bool _loadingMore = false; 
   String _searchQuery = '';
 
   @override
@@ -35,7 +35,7 @@ class _CategoryRecipeScreenState extends State<CategoryRecipeScreen> {
 
   Future<void> fetchCategorySuggestionsAndFirstPage() async {
     try {
-      // Get the list of suggested recipe names for this category (+diet prefs)
+     
       final List<String> suggestions =
           await RecipeService.getRecipeSuggestionsByCategoryAndPreference(
             category: widget.category,
