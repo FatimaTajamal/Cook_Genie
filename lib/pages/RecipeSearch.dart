@@ -7,9 +7,10 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class RecipeService {
-  static const String geminiApiKey = "AIzaSyDh8gND41pOMzHXuSNOohL7s9PBecYinEE";
+  static const String geminiApiKey = "API KEY";
   static const String geminiUrl =
-      "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$geminiApiKey";
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$geminiApiKey";
+
 
   static const String pixabayApiKey = "51392156-8eaa4d6a677c8e44156c40208";
   static const String pixabayBaseUrl = "https://pixabay.com/api/";
@@ -225,6 +226,9 @@ class RecipeService {
         headers: {"Content-Type": "application/json"},
         body: jsonEncode(requestData),
       );
+      print("🔹 Gemini Status Code: ${response.statusCode}");
+      print("🔹 Gemini Raw Response: ${response.body}");
+
 
       if (response.statusCode == 200) {
         final jsonResponse = jsonDecode(response.body);
