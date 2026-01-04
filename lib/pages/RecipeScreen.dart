@@ -1,6 +1,7 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb;
+
 import 'firestore_saved_recipes_service.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:get/get.dart';
@@ -10,7 +11,6 @@ import 'package:permission_handler/permission_handler.dart';
 import 'RecipeSearch.dart';
 import 'grocery_list_screen.dart';
 import 'voice_assistant_controller.dart';
-
 
 class RecipeScreen extends StatefulWidget {
   final List<Map<String, dynamic>> savedRecipes;
@@ -43,21 +43,26 @@ class _RecipeScreenState extends State<RecipeScreen> {
   String _ttsText = "";
   Map<String, dynamic>? _recipe;
 
-  // State variable for the multi-stage voice flow
   String? _clarificationQuery;
   List<String>? _suggestedRecipes;
   bool _awaitingReadyConfirmation = false;
-  
-  // NEW: Track if we should enable continuous listening for initial prompt
+
   bool _waitingForInitialRecipeName = false;
+
+  // --- THEME CONSTANTS (match your other screens) ---
+  static const Color _bgTop = Color(0xFF0B0615);
+  static const Color _bgMid = Color(0xFF130A26);
+  static const Color _bgBottom = Color(0xFF1C0B33);
+  static const Color _accent = Color(0xFFB57BFF);
+  static const Color _accent2 = Color(0xFF7E3FF2);
 
   @override
   void initState() {
     super.initState();
 
     final voiceController = Get.find<VoiceAssistantController>();
-    
-    // CRITICAL: Completely stop the voice controller's speech instance
+
+    // Stop any home listening/speech
     voiceController.stopAllSpeechRecognition();
     voiceController.stopHomeListening();
     voiceController.disableHomeAutoRestart();
@@ -67,22 +72,17 @@ class _RecipeScreenState extends State<RecipeScreen> {
         _recipe = widget.initialRecipe;
         _hasSearched = true;
         _ttsText = _formatRecipe(_recipe!);
-        _isFavorite = widget.savedRecipes.any(
-          (r) => r['name'] == _recipe!['name'],
-        );
+        _isFavorite = widget.savedRecipes.any((r) => r['name'] == _recipe!['name']);
 
         voiceController.startRecipeReading(_formatRecipe(_recipe!));
       } else {
-        // NEW: Set flag to enable continuous listening
         _waitingForInitialRecipeName = true;
-        
+
         WidgetsBinding.instance.addPostFrameCallback((_) async {
           await voiceController.speak(
             "Please say the name of the dish you want to search for.",
           );
-          // Wait for TTS to complete, then start listening
           await Future.delayed(const Duration(milliseconds: 1500));
-          print("🎤 Starting voice search after initial prompt...");
           _initializeAndStartVoiceSearch();
         });
       }
@@ -91,9 +91,7 @@ class _RecipeScreenState extends State<RecipeScreen> {
         _recipe = widget.initialRecipe;
         _hasSearched = true;
         _ttsText = _formatRecipe(_recipe!);
-        _isFavorite = widget.savedRecipes.any(
-          (r) => r['name'] == _recipe!['name'],
-        );
+        _isFavorite = widget.savedRecipes.any((r) => r['name'] == _recipe!['name']);
       }
     }
   }
@@ -102,20 +100,17 @@ class _RecipeScreenState extends State<RecipeScreen> {
   void dispose() {
     final voiceController = Get.find<VoiceAssistantController>();
     voiceController.stopRecipeReading();
-    
-    // Re-enable home auto-restart and start home listening
+
     voiceController.enableHomeAutoRestart();
     voiceController.startHomeListening(savedRecipes: widget.savedRecipes);
-    
+
     if (widget.isVoiceActivated) {
       voiceController.resetVoiceMode();
     }
 
-    // Stop all listening sessions
     _recipeNameSpeech.stop();
     _readyConfirmationSpeech.stop();
 
-    // Reset clarification state
     _clarificationQuery = null;
     _suggestedRecipes = null;
     _awaitingReadyConfirmation = false;
@@ -126,6 +121,20 @@ class _RecipeScreenState extends State<RecipeScreen> {
     super.dispose();
   }
 
+  // ---------- UI HELPERS ----------
+  void _showSnack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: const Color(0xFF2A1246),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      ),
+    );
+  }
+
+  // ---------- LOGIC (UNCHANGED) ----------
   Future<void> _searchRecipe(String query) async {
     setState(() {
       _hasSearched = true;
@@ -137,9 +146,7 @@ class _RecipeScreenState extends State<RecipeScreen> {
     if (recipe != null) {
       setState(() {
         _recipe = recipe;
-        _isFavorite = widget.savedRecipes.any(
-          (r) => r['name'] == recipe['name'],
-        );
+        _isFavorite = widget.savedRecipes.any((r) => r['name'] == recipe['name']);
         _ttsText = _formatRecipe(recipe);
         _isLoading = false;
       });
@@ -150,13 +157,12 @@ class _RecipeScreenState extends State<RecipeScreen> {
       }
     } else {
       if (widget.isVoiceActivated) {
-         final voiceController = Get.find<VoiceAssistantController>();
-         await voiceController.speak("I couldn't find a recipe for $query. Please try another name.");
-         await Future.delayed(const Duration(milliseconds: 1500));
-         print("🔄 Restarting voice search after recipe not found...");
-         _startVoiceSearchListening();
+        final voiceController = Get.find<VoiceAssistantController>();
+        await voiceController.speak("I couldn't find a recipe for $query. Please try another name.");
+        await Future.delayed(const Duration(milliseconds: 1500));
+        _startVoiceSearchListening();
       }
-      
+
       setState(() {
         _recipe = null;
         _ttsText = "";
@@ -170,27 +176,22 @@ class _RecipeScreenState extends State<RecipeScreen> {
     VoiceAssistantController voiceController,
   ) async {
     final essentials = _extractDetailedEssentials(recipe);
-    
+
     String essentialsText = "Here are the essentials for ${recipe['name']}: ";
     essentialsText += "You will need ${essentials['ingredientCount']} main ingredients, ";
     essentialsText += "which include ${essentials['keyIngredients']}. ";
     essentialsText += "The recipe takes approximately ${essentials['estimatedTime']}. ";
-    
+
     setState(() {
       _awaitingReadyConfirmation = true;
     });
-    
-    // Speak the essentials first - await ensures it completes
+
     await voiceController.speak(essentialsText);
-    
-    // Now say "Say ready when you want to begin cooking" separately
     await voiceController.speak("Say ready when you want to begin cooking.");
-    
+
     await Future.delayed(const Duration(milliseconds: 1000));
-    
-    // Start continuous listening for "ready"
+
     if (_awaitingReadyConfirmation && mounted) {
-      print("🎤 Starting ready confirmation listening...");
       _initializeAndStartReadyListening();
     }
   }
@@ -198,15 +199,13 @@ class _RecipeScreenState extends State<RecipeScreen> {
   Map<String, dynamic> _extractDetailedEssentials(Map<String, dynamic> recipe) {
     final ingredients = recipe['ingredients'] as List<dynamic>? ?? [];
     final instructions = recipe['instructions'] as List<dynamic>? ?? [];
-    
-    // Get first 8 key ingredients
+
     List<String> keyIngredients = [];
     for (int i = 0; i < (ingredients.length > 8 ? 8 : ingredients.length); i++) {
       final ingredient = ingredients[i];
       keyIngredients.add(ingredient['name']);
     }
-    
-    // Estimate time based on instruction count
+
     String estimatedTime;
     if (instructions.length <= 5) {
       estimatedTime = "15 to 20 minutes";
@@ -215,8 +214,7 @@ class _RecipeScreenState extends State<RecipeScreen> {
     } else {
       estimatedTime = "45 minutes to 1 hour";
     }
-    
-    // Determine difficulty level
+
     String difficulty;
     if (instructions.length <= 5 && ingredients.length <= 8) {
       difficulty = "Easy";
@@ -225,10 +223,9 @@ class _RecipeScreenState extends State<RecipeScreen> {
     } else {
       difficulty = "Advanced";
     }
-    
-    // Estimate servings (default assumption)
+
     String servings = ingredients.length > 10 ? "4-6 people" : "2-4 people";
-    
+
     return {
       'ingredientCount': ingredients.length,
       'keyIngredients': keyIngredients.join(", "),
@@ -256,33 +253,25 @@ class _RecipeScreenState extends State<RecipeScreen> {
     return buffer.toString();
   }
 
-Future<void> _toggleFavorite() async {
-  if (_recipe == null) return;
+  Future<void> _toggleFavorite() async {
+    if (_recipe == null) return;
 
-  try {
-    final isAlreadySaved = await FirestoreSavedRecipesService.isRecipeSaved(_recipe!['name'] ?? '');
-    if (isAlreadySaved) {
-      await FirestoreSavedRecipesService.removeRecipe(_recipe!);
-      setState(() => _isFavorite = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Removed ${_recipe!['name']} from saved recipes.')),
-      );
-    } else {
-      await FirestoreSavedRecipesService.saveRecipe(_recipe!);
-      setState(() => _isFavorite = true);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Saved ${_recipe!['name']} to your recipes!')),
-      );
+    try {
+      final isAlreadySaved = await FirestoreSavedRecipesService.isRecipeSaved(_recipe!['name'] ?? '');
+      if (isAlreadySaved) {
+        await FirestoreSavedRecipesService.removeRecipe(_recipe!);
+        setState(() => _isFavorite = false);
+        _showSnack('Removed ${_recipe!['name']} from saved recipes.');
+      } else {
+        await FirestoreSavedRecipesService.saveRecipe(_recipe!);
+        setState(() => _isFavorite = true);
+        _showSnack('Saved ${_recipe!['name']} to your recipes!');
+      }
+    } catch (e) {
+      _showSnack('Error saving recipe: $e');
     }
-  } catch (e) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Error saving recipe: $e')),
-    );
   }
-}
 
-
-  // Initialize and start voice search
   Future<void> _initializeAndStartVoiceSearch() async {
     if (kIsWeb) {
       _initializeRecipeNameSpeech();
@@ -293,9 +282,7 @@ Future<void> _toggleFavorite() async {
     if (!status.isGranted) {
       status = await Permission.microphone.request();
       if (!status.isGranted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Microphone permission denied')),
-        );
+        _showSnack('Microphone permission denied');
         return;
       }
     }
@@ -303,164 +290,86 @@ Future<void> _toggleFavorite() async {
     _initializeRecipeNameSpeech();
   }
 
-  // Initialize speech recognizer for recipe names (only once)
   Future<void> _initializeRecipeNameSpeech() async {
     if (_recipeNameSpeechInitialized) {
-      print("✅ Speech already initialized, starting listening...");
       _startVoiceSearchListening();
       return;
     }
 
     bool available = await _recipeNameSpeech.initialize(
       onStatus: (val) {
-        print("========== Voice search status: $val ==========");
         if (val == 'listening') {
-          if (mounted) {
-            setState(() {
-              _isRecipeNameListening = true;
-            });
-          }
+          if (mounted) setState(() => _isRecipeNameListening = true);
         } else if (val == 'notListening' || val == 'done') {
-          print("🔄 Status changed to $val, will restart...");
-          
-          // Set flag BEFORE calling setState
           final wasListening = _isRecipeNameListening;
-          
-          if (mounted) {
-            setState(() {
-              _isRecipeNameListening = false;
-            });
-          }
-          
-          // Trigger restart AFTER setState completes
-          if (wasListening && mounted) {
-            print("🔄 Calling auto-restart from onStatus");
-            _autoRestartRecipeNameListening();
-          }
+          if (mounted) setState(() => _isRecipeNameListening = false);
+          if (wasListening && mounted) _autoRestartRecipeNameListening();
         }
       },
       onError: (val) {
-        print("❌ Voice search error: $val");
-        
-        // Set flag BEFORE calling setState
         final wasListening = _isRecipeNameListening;
-        
-        if (mounted) {
-          setState(() {
-            _isRecipeNameListening = false;
-          });
-        }
-        
-        // Trigger restart AFTER setState completes
-        if (wasListening && mounted) {
-          print("🔄 Calling auto-restart from onError");
-          _autoRestartRecipeNameListening();
-        }
+        if (mounted) setState(() => _isRecipeNameListening = false);
+        if (wasListening && mounted) _autoRestartRecipeNameListening();
       },
     );
 
     if (available) {
-      print("✅ Speech recognizer initialized successfully");
       _recipeNameSpeechInitialized = true;
       _startVoiceSearchListening();
     } else {
-      print("❌ Speech recognizer not available");
-      // Retry initialization after delay
       Future.delayed(const Duration(milliseconds: 500), _initializeRecipeNameSpeech);
     }
   }
 
-  // UPDATED: Auto-restart logic matching voice controller pattern exactly
   void _autoRestartRecipeNameListening() {
-    // Restart if:
-    // 1. We're waiting for initial recipe name (before any search), OR
-    // 2. No recipe found yet and not waiting for ready confirmation
-    bool shouldRestart = _waitingForInitialRecipeName || 
-                        (_recipe == null && !_awaitingReadyConfirmation);
-    
-    print("🔍 Auto-restart check: shouldRestart=$shouldRestart, isListening=$_isRecipeNameListening, mounted=$mounted");
-    
+    bool shouldRestart =
+        _waitingForInitialRecipeName || (_recipe == null && !_awaitingReadyConfirmation);
+
     if (!_isRecipeNameListening && shouldRestart && mounted) {
-      print("🔄 Auto-restarting recipe name listening in 300ms...");
-      // Use Future.delayed matching the voice controller pattern (300ms)
       Future.delayed(const Duration(milliseconds: 300), () {
-        // Re-check conditions inside the delayed callback
-        bool stillShouldRestart = _waitingForInitialRecipeName || 
-                                  (_recipe == null && !_awaitingReadyConfirmation);
-        print("🔍 Delayed restart check: stillShouldRestart=$stillShouldRestart, isListening=$_isRecipeNameListening, mounted=$mounted");
-        
+        bool stillShouldRestart =
+            _waitingForInitialRecipeName || (_recipe == null && !_awaitingReadyConfirmation);
         if (!_isRecipeNameListening && stillShouldRestart && mounted) {
-          print("✅ Conditions met, calling _startVoiceSearchListening()");
           _startVoiceSearchListening();
-        } else {
-          print("❌ Conditions not met, skipping restart");
         }
       });
-    } else {
-      print("⏸️ Not restarting - conditions not met");
     }
   }
 
-  // Start listening for recipe names (can be called repeatedly)
   void _startVoiceSearchListening() async {
-    if (!mounted || _isRecipeNameListening || !_recipeNameSpeechInitialized) {
-      print("⚠️ Cannot start listening: mounted=$mounted, isListening=$_isRecipeNameListening, initialized=$_recipeNameSpeechInitialized");
-      return;
-    }
-    
-    // Don't start if we already have a recipe or waiting for ready
-    if (_recipe != null || _awaitingReadyConfirmation) {
-      print("⏸️ Not starting - recipe exists or awaiting confirmation");
-      return;
-    }
+    if (!mounted || _isRecipeNameListening || !_recipeNameSpeechInitialized) return;
+    if (_recipe != null || _awaitingReadyConfirmation) return;
 
-    // CRITICAL: Stop any existing listening session first
-    print("🛑 Stopping any existing speech session...");
     await _recipeNameSpeech.stop();
-    
-    // Longer delay to ensure stop completes and avoid error_busy
     await Future.delayed(const Duration(milliseconds: 300));
 
-    // Check if speech is available before starting
     bool available = await _recipeNameSpeech.isAvailable;
     if (!available) {
-      print("⚠️ Speech not available, retrying...");
       Future.delayed(const Duration(milliseconds: 500), _autoRestartRecipeNameListening);
       return;
     }
-    
-    print("🎤 Starting voice search listening...");
-    
-    setState(() {
-      _isRecipeNameListening = true;
-    });
-    
+
+    setState(() => _isRecipeNameListening = true);
+
     try {
-      // Use unawaited - don't wait for listen to complete
       _recipeNameSpeech.listen(
         onResult: (val) async {
-          print("📝 onResult called - finalResult: ${val.finalResult}, words: ${val.recognizedWords}");
-          
           if (val.finalResult) {
             String recognizedWords = val.recognizedWords.trim().toLowerCase();
-            print("✅ Final result received: $recognizedWords");
 
             setState(() {
               _controller.text = recognizedWords;
               _isLoading = true;
             });
-            
-            if (_clarificationQuery == null) {
-              // STAGE 1: User said something like "Pasta"
-              // Disable initial waiting flag once we get first input
-              _waitingForInitialRecipeName = false;
-              
-              setState(() {
-                _clarificationQuery = recognizedWords;
-              });
 
-              List<String> suggestions = await RecipeService.getRecipeSuggestions(recognizedWords);
-              
+            if (_clarificationQuery == null) {
+              _waitingForInitialRecipeName = false;
+
+              setState(() => _clarificationQuery = recognizedWords);
+
+              List<String> suggestions =
+                  await RecipeService.getRecipeSuggestions(recognizedWords);
+
               if (suggestions.isNotEmpty) {
                 setState(() {
                   _suggestedRecipes = suggestions;
@@ -471,50 +380,39 @@ Future<void> _toggleFavorite() async {
                 String clarificationText = "Here are some $recognizedWords recipes: ";
                 clarificationText += suggestions.join(", ");
                 clarificationText += ". Which one would you like?";
-                
-                await voiceController.speak(clarificationText);
-                
-                // Wait a bit for TTS, then restart
-                await Future.delayed(const Duration(milliseconds: 500));
-                print("🔄 Triggering manual restart after suggestions...");
-                setState(() {
-                  _isRecipeNameListening = false;
-                });
-                _autoRestartRecipeNameListening();
 
+                await voiceController.speak(clarificationText);
+
+                await Future.delayed(const Duration(milliseconds: 500));
+                if (!mounted) return;
+                setState(() => _isRecipeNameListening = false);
+                _autoRestartRecipeNameListening();
               } else {
                 setState(() {
                   _clarificationQuery = null;
                   _suggestedRecipes = null;
                   _isLoading = false;
                 });
-                
+
                 final voiceController = Get.find<VoiceAssistantController>();
                 await voiceController.speak(
-                  "I couldn't find any $recognizedWords recipes. Please try another dish."
+                  "I couldn't find any $recognizedWords recipes. Please try another dish.",
                 );
-                
-                // Re-enable initial waiting for continuous listening
+
                 _waitingForInitialRecipeName = true;
-                
-                // Wait a bit for TTS, then restart
+
                 await Future.delayed(const Duration(milliseconds: 500));
-                print("🔄 Triggering manual restart after no results...");
-                setState(() {
-                  _isRecipeNameListening = false;
-                });
+                if (!mounted) return;
+                setState(() => _isRecipeNameListening = false);
                 _autoRestartRecipeNameListening();
               }
-
             } else {
-              // STAGE 2: User gave the specific recipe name from suggestions
               String finalQuery = recognizedWords;
-              
-              // Check if the user's input matches one of the suggestions
+
               bool matchFound = false;
               if (_suggestedRecipes != null) {
                 for (String suggestion in _suggestedRecipes!) {
-                  if (recognizedWords.contains(suggestion.toLowerCase()) || 
+                  if (recognizedWords.contains(suggestion.toLowerCase()) ||
                       suggestion.toLowerCase().contains(recognizedWords)) {
                     finalQuery = suggestion;
                     matchFound = true;
@@ -522,55 +420,43 @@ Future<void> _toggleFavorite() async {
                   }
                 }
               }
-              
-              // If no match found, try using the recognized words directly
+
               if (!matchFound && _suggestedRecipes != null && _suggestedRecipes!.isNotEmpty) {
-                // Try to find partial match
                 for (String suggestion in _suggestedRecipes!) {
                   List<String> suggestionWords = suggestion.toLowerCase().split(' ');
                   List<String> recognizedWordsList = recognizedWords.split(' ');
-                  
-                  // Check if at least 2 words match
+
                   int matchCount = 0;
                   for (String word in recognizedWordsList) {
-                    if (suggestionWords.contains(word)) {
-                      matchCount++;
-                    }
+                    if (suggestionWords.contains(word)) matchCount++;
                   }
-                  
-                  if (matchCount >= 2 || (recognizedWordsList.length == 1 && matchCount >= 1)) {
+
+                  if (matchCount >= 2 ||
+                      (recognizedWordsList.length == 1 && matchCount >= 1)) {
                     finalQuery = suggestion;
                     matchFound = true;
                     break;
                   }
                 }
               }
-              
-              // Now we need to stop because we found the recipe
-              print("Stopping speech - recipe found");
+
               await _recipeNameSpeech.stop();
+              if (!mounted) return;
               setState(() {
                 _isRecipeNameListening = false;
-                _waitingForInitialRecipeName = false; // Disable continuous listening
+                _waitingForInitialRecipeName = false;
               });
-              
+
               _clarificationQuery = null;
               _suggestedRecipes = null;
-              
-              setState(() {
-                _isLoading = true;
-              });
+
+              setState(() => _isLoading = true);
 
               await _searchRecipe(finalQuery);
             }
           } else {
-            setState(() {
-              _controller.text = val.recognizedWords;
-            });
+            if (mounted) setState(() => _controller.text = val.recognizedWords);
           }
-        },
-        onSoundLevelChange: (level) {
-          // Optional: visual feedback for sound level
         },
         listenFor: const Duration(seconds: 60),
         pauseFor: const Duration(seconds: 60),
@@ -578,88 +464,61 @@ Future<void> _toggleFavorite() async {
         cancelOnError: false,
         listenMode: stt.ListenMode.confirmation,
       );
-      
-      // Start polling to check if listening stopped
+
       _startListeningMonitor();
-      
     } catch (e) {
-      print("❌ Exception in listen call: $e");
-      if (mounted) {
-        setState(() {
-          _isRecipeNameListening = false;
-        });
-      }
-      // Restart on exception
+      if (mounted) setState(() => _isRecipeNameListening = false);
       Future.delayed(const Duration(milliseconds: 500), _autoRestartRecipeNameListening);
     }
   }
-  
-  // NEW: Monitor listening status and restart when it stops
+
   void _startListeningMonitor() {
     Future.delayed(const Duration(milliseconds: 2000), () async {
       if (!mounted) return;
-      
-      // Check if we're supposed to be listening
-      bool shouldBeListening = _waitingForInitialRecipeName || 
-                               (_recipe == null && !_awaitingReadyConfirmation);
-      
+
+      bool shouldBeListening =
+          _waitingForInitialRecipeName || (_recipe == null && !_awaitingReadyConfirmation);
+
       if (shouldBeListening && _isRecipeNameListening) {
-        // Check if actually listening
         bool isActuallyListening = await _recipeNameSpeech.isListening;
-        print("🔍 Monitor check - shouldListen: $shouldBeListening, flagSet: $_isRecipeNameListening, actuallyListening: $isActuallyListening");
-        
         if (!isActuallyListening) {
-          // Listening stopped but flag is still true
-          print("⚠️ Listening stopped unexpectedly! Restarting...");
-          setState(() {
-            _isRecipeNameListening = false;
-          });
+          if (!mounted) return;
+          setState(() => _isRecipeNameListening = false);
           _autoRestartRecipeNameListening();
         } else {
-          // Still listening, check again later
           _startListeningMonitor();
         }
       }
     });
   }
 
-  // Initialize and start ready confirmation listening
   Future<void> _initializeAndStartReadyListening() async {
     if (_readySpeechInitialized) {
-      print("✅ Ready speech already initialized, starting listening...");
       _startReadyConfirmationListening();
       return;
     }
 
     bool available = await _readyConfirmationSpeech.initialize(
       onStatus: (val) {
-        print("========== Ready confirmation status: $val ==========");
         if (val == 'notListening' || val == 'done') {
-          // Auto-restart like home page does
           _autoRestartReadyListening();
         }
       },
       onError: (val) {
-        print("❌ Ready confirmation error: $val");
-        // Auto-restart on error like home page does
         _autoRestartReadyListening();
       },
     );
 
     if (available) {
-      print("✅ Ready speech recognizer initialized");
       _readySpeechInitialized = true;
       _startReadyConfirmationListening();
     } else {
-      print("❌ Ready speech recognizer not available");
       Future.delayed(const Duration(milliseconds: 500), _initializeAndStartReadyListening);
     }
   }
 
-  // Auto-restart logic for ready confirmation
   void _autoRestartReadyListening() {
     if (_awaitingReadyConfirmation && mounted) {
-      print("🔄 Auto-restarting ready confirmation listening...");
       Future.delayed(const Duration(milliseconds: 300), () {
         if (_awaitingReadyConfirmation && mounted) {
           _startReadyConfirmationListening();
@@ -668,23 +527,15 @@ Future<void> _toggleFavorite() async {
     }
   }
 
-  // Start listening for "ready" (can be called repeatedly)
   void _startReadyConfirmationListening() async {
-    if (!mounted || !_awaitingReadyConfirmation || !_readySpeechInitialized) {
-      print("⚠️ Cannot start ready listening: mounted=$mounted, awaiting=$_awaitingReadyConfirmation, initialized=$_readySpeechInitialized");
-      return;
-    }
+    if (!mounted || !_awaitingReadyConfirmation || !_readySpeechInitialized) return;
 
-    // Check if speech is available before starting
     bool available = await _readyConfirmationSpeech.isAvailable;
     if (!available) {
-      print("⚠️ Ready speech not available, retrying...");
       Future.delayed(const Duration(milliseconds: 500), _autoRestartReadyListening);
       return;
     }
 
-    print("🎤 Starting ready confirmation listening...");
-    
     try {
       await _readyConfirmationSpeech.listen(
         onResult: (val) async {
@@ -692,42 +543,30 @@ Future<void> _toggleFavorite() async {
             String recognizedWords = val.recognizedWords.trim().toLowerCase();
             final voiceController = Get.find<VoiceAssistantController>();
 
-            print("Recognized in ready mode: $recognizedWords");
-
-            setState(() {
-              _controller.text = recognizedWords;
-            });
+            if (!mounted) return;
+            setState(() => _controller.text = recognizedWords);
 
             if (_awaitingReadyConfirmation && recognizedWords.contains("ready")) {
-              // Only stop when we hear "ready"
-              setState(() {
-                _awaitingReadyConfirmation = false;
-              });
-              
+              setState(() => _awaitingReadyConfirmation = false);
               await _readyConfirmationSpeech.stop();
-              
-              // Start reading the full recipe
+
               await voiceController.startRecipeReading(_formatRecipe(_recipe!));
             }
-            // If not "ready", the onStatus callback will auto-restart
           }
         },
         listenFor: const Duration(seconds: 60),
-        pauseFor: const Duration(seconds: 60), // CHANGED from 3 to 60 to match voice controller
+        pauseFor: const Duration(seconds: 60),
         partialResults: true,
         cancelOnError: false,
         listenMode: stt.ListenMode.confirmation,
       );
     } catch (e) {
-      print("❌ Exception in ready listen call: $e");
-      // The onError callback will handle restart
       Future.delayed(const Duration(milliseconds: 500), _autoRestartReadyListening);
     }
   }
 
   void _startManualRecipeReading() {
     if (_recipe == null) return;
-    
     final voiceController = Get.find<VoiceAssistantController>();
     voiceController.startRecipeReading(_formatRecipe(_recipe!));
   }
@@ -737,245 +576,356 @@ Future<void> _toggleFavorite() async {
     voiceController.stopRecipeReading();
   }
 
+  // ---------- UI BUILD ----------
   @override
   Widget build(BuildContext context) {
     return WillPopScope(
       onWillPop: () async {
         final voiceController = Get.find<VoiceAssistantController>();
         voiceController.stopRecipeReading();
-        
-        // Re-enable home auto-restart and start home listening
+
         voiceController.enableHomeAutoRestart();
         voiceController.startHomeListening(savedRecipes: widget.savedRecipes);
-        
+
         if (widget.isVoiceActivated) {
           voiceController.resetVoiceMode();
         }
-        
-        // Stop listening sessions
+
         _recipeNameSpeech.stop();
         _readyConfirmationSpeech.stop();
-        
+
         return true;
       },
       child: Scaffold(
+        backgroundColor: _bgTop,
         appBar: AppBar(
-          title: const Text('Cook Genie'),
+          backgroundColor: const Color(0xFF120A22),
+          elevation: 0,
+          centerTitle: true,
+          title: const Text(
+            'CookGenie',
+            style: TextStyle(fontWeight: FontWeight.w900),
+          ),
+          foregroundColor: Colors.white,
+          actions: [
+            if (_recipe != null)
+              IconButton(
+                tooltip: _isFavorite ? "Saved" : "Save",
+                onPressed: _toggleFavorite,
+                icon: Icon(
+                  _isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                  color: _isFavorite ? _accent : Colors.white.withOpacity(0.85),
+                ),
+              ),
+          ],
         ),
-        body: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              if (widget.initialRecipe == null)
-                Row(
+        body: Stack(
+          children: [
+            _bgGradient(),
+            _bgStars(),
+            SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _controller,
-                        decoration: const InputDecoration(
-                          labelText: "Enter recipe name",
-                          border: OutlineInputBorder(),
-                        ),
-                        onSubmitted: _searchRecipe,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 500),
-                      width: _isRecipeNameListening ? 70 : 60,
-                      height: _isRecipeNameListening ? 70 : 60,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: _isRecipeNameListening ? Colors.redAccent : Colors.blue,
-                        boxShadow: _isRecipeNameListening
-                            ? [
-                                BoxShadow(
-                                  color: Colors.redAccent.withOpacity(0.6),
-                                  spreadRadius: 8,
-                                  blurRadius: 12,
-                                ),
-                              ]
-                            : [],
-                      ),
-                      child: GestureDetector(
-                        onTap: _initializeAndStartVoiceSearch,
-                        child: Icon(
-                          _isRecipeNameListening ? Icons.mic : Icons.mic_none,
-                          color: Colors.white,
-                          size: 30,
-                        ),
-                      ),
-                    ),
+                    if (widget.initialRecipe == null) _searchRow(),
+                    if (widget.initialRecipe == null) const SizedBox(height: 12),
+
+                    _voiceStatusPill(),
+                    const SizedBox(height: 12),
+
+                    if (_awaitingReadyConfirmation && _recipe != null)
+                      _essentialsCard(),
+                    if (_awaitingReadyConfirmation && _recipe != null)
+                      const SizedBox(height: 12),
+
+                    if (_suggestedRecipes != null && _suggestedRecipes!.isNotEmpty)
+                      _suggestionsCard(),
+                    if (_suggestedRecipes != null && _suggestedRecipes!.isNotEmpty)
+                      const SizedBox(height: 12),
+
+                    Expanded(child: _content()),
                   ],
                 ),
-              const SizedBox(height: 16),
-              GetBuilder<VoiceAssistantController>(
-                builder: (controller) {
-                  if (!controller.isRecipeSpeaking && !controller.isRecipePaused && !_isRecipeNameListening && !_awaitingReadyConfirmation) {
-                    return const SizedBox.shrink();
-                  }
-                  
-                  return Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: (_isRecipeNameListening || _awaitingReadyConfirmation)
-                          ? Colors.green.withOpacity(0.2)
-                          : Colors.grey.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          (_isRecipeNameListening || _awaitingReadyConfirmation) ? Icons.mic : Icons.mic_off,
-                          color: (_isRecipeNameListening || _awaitingReadyConfirmation) ? Colors.green : Colors.grey,
-                          size: 16,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          _awaitingReadyConfirmation
-                              ? "Listening for 'ready'..."
-                              : _isRecipeNameListening
-                                  ? _clarificationQuery != null
-                                      ? "Listening for specific recipe..."
-                                      : "Listening for dish type..."
-                                  : "Voice commands inactive",
-                          style: TextStyle(
-                            color: (_isRecipeNameListening || _awaitingReadyConfirmation) ? Colors.green : Colors.grey,
-                            fontSize: 12,
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
               ),
-              const SizedBox(height: 16),
-              if (_awaitingReadyConfirmation && _recipe != null)
-                SizedBox(
-                  height: 220,
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.orange.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.orange.withOpacity(0.3)),
-                    ),
-                    child: SingleChildScrollView(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            "Recipe Essentials for ${_recipe!['name']}:",
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 15,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          ..._buildEssentialsDisplay(_extractDetailedEssentials(_recipe!)),
-                          const SizedBox(height: 12),
-                          const Text(
-                            "🎤 Say 'ready' when you want to begin cooking",
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontStyle: FontStyle.italic,
-                              color: Colors.green,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              if (_suggestedRecipes != null && _suggestedRecipes!.isNotEmpty)
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Colors.blue.withOpacity(0.3)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        "Suggested $_clarificationQuery recipes:",
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      ...(_suggestedRecipes!.map((recipe) => Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 2),
-                        child: Text("• $recipe", style: const TextStyle(fontSize: 13)),
-                      )).toList()),
-                      const SizedBox(height: 8),
-                      const Text(
-                        "Say the recipe name you want",
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontStyle: FontStyle.italic,
-                          color: Colors.grey,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              const SizedBox(height: 16),
-              Expanded(
-                child: _hasSearched
-                    ? _isLoading
-                        ? const Center(child: CircularProgressIndicator())
-                        : _recipe != null
-                            ? _buildRecipeDetails()
-                            : const Center(child: Text('No recipe found.'))
-                    : const Center(
-                        child: Text('Search for a recipe to begin.'),
-                      ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  List<Widget> _buildEssentialsDisplay(Map<String, dynamic> essentials) {
+  Widget _content() {
+    if (!_hasSearched) {
+      return Center(
+        child: Text(
+          'Search for a recipe to begin.',
+          style: TextStyle(color: Colors.white.withOpacity(0.65), fontWeight: FontWeight.w600),
+        ),
+      );
+    }
+
+    if (_isLoading) {
+      return const Center(
+        child: SizedBox(width: 34, height: 34, child: CircularProgressIndicator(strokeWidth: 3)),
+      );
+    }
+
+    if (_recipe == null) {
+      return Center(
+        child: Text(
+          'No recipe found.',
+          style: TextStyle(color: Colors.white.withOpacity(0.65), fontWeight: FontWeight.w700),
+        ),
+      );
+    }
+
+    return _buildRecipeDetailsThemed();
+  }
+
+  Widget _searchRow() {
+    return Row(
+      children: [
+        Expanded(
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              gradient: LinearGradient(
+                colors: [
+                  _accent2.withOpacity(0.20),
+                  _accent.withOpacity(0.10),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              border: Border.all(color: Colors.white.withOpacity(0.14)),
+              boxShadow: [
+                BoxShadow(
+                  color: _accent.withOpacity(0.16),
+                  blurRadius: 18,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            child: TextField(
+              controller: _controller,
+              style: const TextStyle(color: Colors.white),
+              cursorColor: _accent,
+              decoration: InputDecoration(
+                hintText: "e.g., chicken biryani",
+                hintStyle: TextStyle(color: Colors.white.withOpacity(0.45)),
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+              ),
+              onSubmitted: _searchRecipe,
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 350),
+          width: _isRecipeNameListening ? 66 : 58,
+          height: _isRecipeNameListening ? 66 : 58,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: _isRecipeNameListening ? Colors.redAccent : _accent,
+            boxShadow: _isRecipeNameListening
+                ? [
+                    BoxShadow(
+                      color: Colors.redAccent.withOpacity(0.55),
+                      spreadRadius: 6,
+                      blurRadius: 14,
+                    ),
+                  ]
+                : [
+                    BoxShadow(
+                      color: _accent.withOpacity(0.35),
+                      spreadRadius: 2,
+                      blurRadius: 14,
+                    ),
+                  ],
+          ),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(999),
+            onTap: _initializeAndStartVoiceSearch,
+            child: Icon(
+              _isRecipeNameListening ? Icons.mic_rounded : Icons.mic_none_rounded,
+              color: Colors.white,
+              size: 28,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _voiceStatusPill() {
+    return GetBuilder<VoiceAssistantController>(
+      builder: (controller) {
+        final shouldShow =
+            controller.isRecipeSpeaking || controller.isRecipePaused || _isRecipeNameListening || _awaitingReadyConfirmation;
+
+        if (!shouldShow) return const SizedBox.shrink();
+
+        final bool activeListening = _isRecipeNameListening || _awaitingReadyConfirmation;
+
+        final text = _awaitingReadyConfirmation
+            ? "Listening for 'ready'..."
+            : _isRecipeNameListening
+                ? (_clarificationQuery != null
+                    ? "Listening for specific recipe..."
+                    : "Listening for dish type...")
+                : "Voice active";
+
+        return Align(
+          alignment: Alignment.centerLeft,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(999),
+              color: activeListening ? _accent.withOpacity(0.16) : Colors.white.withOpacity(0.06),
+              border: Border.all(color: Colors.white.withOpacity(0.12)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  activeListening ? Icons.mic_rounded : Icons.graphic_eq_rounded,
+                  size: 16,
+                  color: activeListening ? _accent : Colors.white.withOpacity(0.65),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  text,
+                  style: TextStyle(
+                    color: activeListening ? Colors.white.withOpacity(0.92) : Colors.white.withOpacity(0.70),
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _essentialsCard() {
+    final essentials = _extractDetailedEssentials(_recipe!);
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        gradient: LinearGradient(
+          colors: [
+            _accent2.withOpacity(0.16),
+            const Color(0xFF2A1246).withOpacity(0.30),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        border: Border.all(color: Colors.white.withOpacity(0.12)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            "Essentials • ${_recipe!['name']}",
+            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 15.5),
+          ),
+          const SizedBox(height: 10),
+          ..._buildEssentialsDisplayThemed(essentials),
+          const SizedBox(height: 10),
+          Text(
+            "🎤 Say 'ready' when you want to begin cooking",
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.78),
+              fontWeight: FontWeight.w700,
+              fontSize: 12.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _suggestionsCard() {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        gradient: LinearGradient(
+          colors: [
+            Colors.white.withOpacity(0.06),
+            _accent2.withOpacity(0.12),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        border: Border.all(color: Colors.white.withOpacity(0.12)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            "Suggested $_clarificationQuery recipes",
+            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 14.5),
+          ),
+          const SizedBox(height: 8),
+          ..._suggestedRecipes!.map(
+            (r) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Text(
+                "• $r",
+                style: TextStyle(color: Colors.white.withOpacity(0.78), fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            "Say the recipe name you want",
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.55),
+              fontSize: 12,
+              fontStyle: FontStyle.italic,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildEssentialsDisplayThemed(Map<String, dynamic> essentials) {
     return [
-      _buildEssentialRow(Icons.restaurant_menu, 
-        "Ingredients", "${essentials['ingredientCount']} items needed"),
+      _essentialRow(Icons.restaurant_menu_rounded, "Ingredients", "${essentials['ingredientCount']} items"),
       const SizedBox(height: 8),
-      _buildEssentialRow(Icons.access_time, 
-        "Time", essentials['estimatedTime']),
+      _essentialRow(Icons.access_time_rounded, "Time", essentials['estimatedTime']),
       const SizedBox(height: 8),
-      _buildEssentialRow(Icons.signal_cellular_alt, 
-        "Difficulty", essentials['difficulty']),
+      _essentialRow(Icons.signal_cellular_alt_rounded, "Difficulty", essentials['difficulty']),
       const SizedBox(height: 8),
-      _buildEssentialRow(Icons.people, 
-        "Servings", essentials['servings']),
+      _essentialRow(Icons.people_alt_rounded, "Servings", essentials['servings']),
       const SizedBox(height: 8),
-      _buildEssentialRow(Icons.shopping_basket, 
-        "Key Items", essentials['keyIngredients']),
+      _essentialRow(Icons.shopping_basket_rounded, "Key items", essentials['keyIngredients']),
     ];
   }
 
-  Widget _buildEssentialRow(IconData icon, String label, String value) {
+  Widget _essentialRow(IconData icon, String label, String value) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 18, color: Colors.orange),
+        Icon(icon, size: 18, color: _accent),
         const SizedBox(width: 8),
         Expanded(
           child: RichText(
             text: TextSpan(
-              style: const TextStyle(fontSize: 13, color: Colors.black87),
+              style: TextStyle(fontSize: 13, color: Colors.white.withOpacity(0.78), height: 1.25),
               children: [
                 TextSpan(
                   text: "$label: ",
-                  style: const TextStyle(fontWeight: FontWeight.w600),
+                  style: TextStyle(fontWeight: FontWeight.w900, color: Colors.white.withOpacity(0.92)),
                 ),
                 TextSpan(text: value),
               ],
@@ -986,139 +936,296 @@ Future<void> _toggleFavorite() async {
     );
   }
 
-  Widget _buildRecipeDetails() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.only(bottom: 24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  Widget _buildRecipeDetailsThemed() {
+    final name = (_recipe!['name'] ?? 'Recipe').toString();
+
+    final imageUrl = (_recipe!['image_url'] ?? '').toString();
+    final ingredients = (_recipe!['ingredients'] as List? ?? []);
+    final instructions = (_recipe!['instructions'] as List? ?? []);
+
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 16),
+      children: [
+        // Title card
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(22),
+            gradient: LinearGradient(
+              colors: [
+                Colors.white.withOpacity(0.06),
+                _accent2.withOpacity(0.12),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            border: Border.all(color: Colors.white.withOpacity(0.12)),
+          ),
+          child: Row(
             children: [
               Expanded(
                 child: Text(
-                  'Recipe: ${_recipe!['name']}',
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  name,
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 18),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
               IconButton(
                 icon: Icon(
-                  _isFavorite ? Icons.favorite : Icons.favorite_border,
-                  color: _isFavorite
-                      ? const Color.fromARGB(255, 168, 85, 236)
-                      : null,
+                  _isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                  color: _isFavorite ? _accent : Colors.white.withOpacity(0.7),
                 ),
                 onPressed: _toggleFavorite,
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          if (_recipe!['image_url'] != null &&
-              _recipe!['image_url'].toString().isNotEmpty)
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: Image.network(
-                _recipe!['image_url'],
-                height: 200,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) =>
-                    const Text('⚠️ Image failed to load'),
+        ),
+        const SizedBox(height: 12),
+
+        // Image
+        if (imageUrl.isNotEmpty)
+          ClipRRect(
+            borderRadius: BorderRadius.circular(18),
+            child: Image.network(
+              imageUrl,
+              height: 210,
+              width: double.infinity,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Container(
+                height: 210,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.06),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: Colors.white.withOpacity(0.12)),
+                ),
+                child: Text(
+                  '⚠️ Image failed to load',
+                  style: TextStyle(color: Colors.white.withOpacity(0.7), fontWeight: FontWeight.w700),
+                ),
               ),
             ),
-          const SizedBox(height: 10),
-          const Text(
-            'Ingredients:',
-            style: TextStyle(fontWeight: FontWeight.bold),
           ),
-          ..._recipe!['ingredients'].map<Widget>((i) {
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Text(
-                '${i['name']} - ${i['quantity']}',
-                style: const TextStyle(fontSize: 16),
-                softWrap: true,
+        if (imageUrl.isNotEmpty) const SizedBox(height: 12),
+
+        _sectionHeader("Ingredients"),
+        const SizedBox(height: 8),
+        ...ingredients.map<Widget>((i) {
+          final n = (i is Map ? i['name'] : '').toString();
+          final q = (i is Map ? i['quantity'] : '').toString();
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                color: Colors.white.withOpacity(0.06),
+                border: Border.all(color: Colors.white.withOpacity(0.10)),
               ),
-            );
-          }).toList(),
-          const SizedBox(height: 10),
-          const Text(
-            'Instructions:',
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
-          ..._recipe!['instructions'].map<Widget>((s) {
-            return Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
               child: Text(
-                s,
-                style: const TextStyle(fontSize: 16),
-                softWrap: true,
+                "$n — $q",
+                style: TextStyle(color: Colors.white.withOpacity(0.85), fontWeight: FontWeight.w700),
               ),
-            );
-          }).toList(),
-          const SizedBox(height: 20),
-          GetBuilder<VoiceAssistantController>(
-            builder: (controller) {
-              return Column(
+            ),
+          );
+        }).toList(),
+
+        const SizedBox(height: 14),
+        _sectionHeader("Instructions"),
+        const SizedBox(height: 8),
+        ...instructions.asMap().entries.map<Widget>((entry) {
+          final idx = entry.key + 1;
+          final text = entry.value.toString();
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(18),
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.white.withOpacity(0.06),
+                    _accent2.withOpacity(0.10),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                border: Border.all(color: Colors.white.withOpacity(0.10)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Center(
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.replay_10, size: 30),
-                          tooltip: "back",
-                          onPressed: controller.rewindRecipe,
-                        ),
-                        IconButton(
-                          icon: Icon(
-                            controller.isRecipeSpeaking ? Icons.stop : Icons.play_arrow,
-                            size: 36,
-                          ),
-                          tooltip: controller.isRecipeSpeaking ? "pause" : "play",
-                          onPressed: () {
-                            if (controller.isRecipeSpeaking) {
-                              _stopManualRecipeReading();
-                            } else {
-                              _startManualRecipeReading();
-                            }
-                          },
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.forward_10, size: 30),
-                          tooltip: "Skip",
-                          onPressed: controller.fastForwardRecipe,
-                        ),
-                      ],
+                  Container(
+                    width: 28,
+                    height: 28,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: _accent.withOpacity(0.18),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.white.withOpacity(0.12)),
+                    ),
+                    child: Text(
+                      "$idx",
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      text,
+                      style: TextStyle(color: Colors.white.withOpacity(0.80), height: 1.25, fontWeight: FontWeight.w600),
                     ),
                   ),
                 ],
-              );
-            },
-          ),
-          const SizedBox(height: 20),
-          Center(
-            child: ElevatedButton(
-              onPressed: () {
-                final ingredientNames = _recipe!['ingredients']
-                    .map<String>((i) => '${i['name']} - ${i['quantity']}')
-                    .toList();
-
-                final groceryController = Get.find<GroceryController>();
-                groceryController.addItems(ingredientNames);
-
-                Get.snackbar(
-                  "Success",
-                  "Ingredients added to your grocery list",
-                  snackPosition: SnackPosition.BOTTOM,
-                );
-              },
-              child: const Text("Add to Grocery List"),
+              ),
             ),
+          );
+        }).toList(),
+
+        const SizedBox(height: 14),
+        _voiceControlsCard(),
+        const SizedBox(height: 14),
+        _addToGroceryButton(),
+      ],
+    );
+  }
+
+  Widget _sectionHeader(String text) {
+    return Text(
+      text,
+      style: TextStyle(
+        color: Colors.white.withOpacity(0.92),
+        fontWeight: FontWeight.w900,
+        fontSize: 14.5,
+      ),
+    );
+  }
+
+  Widget _voiceControlsCard() {
+    return GetBuilder<VoiceAssistantController>(
+      builder: (controller) {
+        return Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(18),
+            color: Colors.white.withOpacity(0.06),
+            border: Border.all(color: Colors.white.withOpacity(0.10)),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.replay_10_rounded, size: 30),
+                color: Colors.white.withOpacity(0.85),
+                tooltip: "Back",
+                onPressed: controller.rewindRecipe,
+              ),
+              const SizedBox(width: 6),
+              InkWell(
+                borderRadius: BorderRadius.circular(999),
+                onTap: () {
+                  if (controller.isRecipeSpeaking) {
+                    _stopManualRecipeReading();
+                  } else {
+                    _startManualRecipeReading();
+                  }
+                },
+                child: Container(
+                  width: 56,
+                  height: 56,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _accent,
+                    boxShadow: [
+                      BoxShadow(
+                        color: _accent.withOpacity(0.35),
+                        blurRadius: 16,
+                        offset: const Offset(0, 10),
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    controller.isRecipeSpeaking ? Icons.stop_rounded : Icons.play_arrow_rounded,
+                    color: Colors.white,
+                    size: 32,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              IconButton(
+                icon: const Icon(Icons.forward_10_rounded, size: 30),
+                color: Colors.white.withOpacity(0.85),
+                tooltip: "Skip",
+                onPressed: controller.fastForwardRecipe,
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _addToGroceryButton() {
+    return SizedBox(
+      height: 52,
+      child: ElevatedButton(
+        onPressed: () {
+          if (_recipe == null) return;
+
+          final ingredientNames = (_recipe!['ingredients'] as List)
+              .map<String>((i) => '${i['name']} - ${i['quantity']}')
+              .toList();
+
+          final groceryController = Get.find<GroceryController>();
+          groceryController.addItems(ingredientNames);
+
+          _showSnack("Ingredients added to your grocery list");
+        },
+        style: ElevatedButton.styleFrom(
+          backgroundColor: _accent,
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          elevation: 0,
+        ),
+        child: const Text(
+          "Add to Grocery List",
+          style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 0.2),
+        ),
+      ),
+    );
+  }
+
+  // ---------- BACKGROUND ----------
+  Widget _bgGradient() {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [_bgTop, _bgMid, _bgBottom],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ),
+      ),
+    );
+  }
+
+  Widget _bgStars() {
+    return IgnorePointer(
+      child: Stack(
+        children: [
+          Positioned(
+            left: 22,
+            top: 110,
+            child: Icon(Icons.auto_awesome, color: Colors.white.withOpacity(0.06), size: 28),
+          ),
+          Positioned(
+            right: 18,
+            top: 160,
+            child: Icon(Icons.auto_awesome, color: Colors.white.withOpacity(0.05), size: 34),
+          ),
+          Positioned(
+            right: 60,
+            top: 380,
+            child: Icon(Icons.auto_awesome, color: Colors.white.withOpacity(0.05), size: 26),
           ),
         ],
       ),

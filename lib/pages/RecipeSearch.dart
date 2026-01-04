@@ -2,20 +2,15 @@ import 'dart:convert';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class RecipeService {
-  static const String geminiApiKey = "API KEY";
-  static const String geminiUrl =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$geminiApiKey";
-
-
-  static const String pixabayApiKey = "51392156-8eaa4d6a677c8e44156c40208";
-  static const String pixabayBaseUrl = "https://pixabay.com/api/";
+  // 🔥 REPLACE WITH YOUR VERCEL URL
+  static const String backendUrl = "https://database-six-kappa.vercel.app";
 
   final FlutterTts flutterTts = FlutterTts();
+  
   final stt.SpeechToText _speech = stt.SpeechToText();
   bool _isListening = false;
 
@@ -123,62 +118,14 @@ class RecipeService {
     await flutterTts.speak(text);
   }
 
-  // 🌐 IMAGE FETCH from PIXABAY
-  static Future<String> fetchImageUrl(String query) async {
-    try {
-      // Clean the query
-      String simplifiedQuery = query.split(":").first.trim();
-      simplifiedQuery = simplifiedQuery.replaceAll(RegExp(r'[&:(),]'), '');
-      
-      // Limit to 4 words
-      List<String> words = simplifiedQuery.split(" ");
-      if (words.length > 4) {
-        simplifiedQuery = words.sublist(0, 4).join(" ");
-      }
-
-      // Add "food" to ensure relevance
-      simplifiedQuery = "$simplifiedQuery food";
-
-      // Build request URL with category filter
-      final uri = Uri.parse(
-        "$pixabayBaseUrl?key=$pixabayApiKey"
-        "&q=${Uri.encodeQueryComponent(simplifiedQuery)}"
-        "&image_type=photo"
-        "&category=food"
-        "&safesearch=true"
-        "&pretty=true"
-      );
-
-      // Make the request
-      final response = await http.get(uri);
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final hits = data["hits"] as List<dynamic>;
-
-        if (hits.isNotEmpty) {
-          // Return first image URL
-          return hits[0]["webformatURL"] ?? "";
-        } else {
-          print("❌ No food-related image found for: $simplifiedQuery");
-        }
-      } else {
-        print("❌ Pixabay API error: ${response.statusCode}");
-      }
-    } catch (e) {
-      print("❌ Error fetching image from Pixabay: $e");
-    }
-
-    return ""; // return empty string if nothing found
-  }
-
-  // 🔎 RECIPE FETCH
+  // 🔎 RECIPE FETCH (calls your backend)
   static Future<Map<String, dynamic>?> getRecipe(
     String query, {
     Function(String)? onError,
   }) async {
-    // 🔥 Get dietary preferences from Firestore
     final List<String> preferences = await _getDietaryPreferences();
+    final List<String> allergies = await _getAllergies();
+    
     final String preferenceKey = preferences.join(",").toLowerCase();
     final String cacheKey = "$query|$preferenceKey";
 
@@ -187,86 +134,31 @@ class RecipeService {
       return _recipeCache[cacheKey];
     }
 
-    String dietaryNote = preferences.isNotEmpty
-        ? "Make sure the recipe is suitable for someone with these dietary preferences: ${preferences.join(', ')}."
-        : "No specific dietary restrictions.";
-
     final Map<String, dynamic> requestData = {
-      "contents": [
-        {
-          "role": "user",
-          "parts": [
-            {
-              "text":
-                  "Give me a **standard and traditional** recipe for '$query' in JSON format **without any code block markers or markdown**. "
-                  "$dietaryNote "
-                  "Use this structure:\n"
-                  "{\n"
-                  "  \"name\": \"Recipe Name\",\n"
-                  "  \"image_url\": \"Image URL\",\n"
-                  "  \"ingredients\": [\n"
-                  "    {\"name\": \"ingredient1\", \"quantity\": \"amount\"},\n"
-                  "    {\"name\": \"ingredient2\", \"quantity\": \"amount\"}\n"
-                  "  ],\n"
-                  "  \"instructions\": [\n"
-                  "    \"Step 1\",\n"
-                  "    \"Step 2\"\n"
-                  "  ]\n"
-                  "} "
-                  "Return valid JSON only."
-            }
-          ]
-        }
-      ]
+      "query": query,
+      "dietaryPreferences": preferences,
+      "allergies": allergies,
     };
 
     try {
       final response = await http.post(
-        Uri.parse(geminiUrl),
+        Uri.parse("$backendUrl/generate"),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode(requestData),
       );
-      print("🔹 Gemini Status Code: ${response.statusCode}");
-      print("🔹 Gemini Raw Response: ${response.body}");
-
+      
+      print("🔹 Backend Status Code: ${response.statusCode}");
 
       if (response.statusCode == 200) {
-        final jsonResponse = jsonDecode(response.body);
-        String content =
-            jsonResponse["candidates"][0]["content"]["parts"][0]["text"];
-        content =
-            content.replaceAll("```json", "").replaceAll("```", "").trim();
-
-        final decoded = jsonDecode(content);
-        Map<String, dynamic>? recipe;
-
-        if (decoded is List) {
-          recipe = Map<String, dynamic>.from(decoded.first);
-        } else if (decoded is Map<String, dynamic>) {
-          recipe = Map<String, dynamic>.from(decoded);
-        } else {
-          print("❌ Unexpected recipe format.");
-          return null;
-        }
-
-        recipe["name"] ??= query;
-        recipe["ingredients"] ??= [];
-        recipe["instructions"] ??= [];
-
-        final imageUrl = await fetchImageUrl(query);
-        print("✅ Recipe Image URL for '$query': $imageUrl");
-        recipe["image_url"] = imageUrl;
-
+        final recipe = jsonDecode(response.body);
         _recipeCache[cacheKey] = recipe;
         return recipe;
       } else {
-        onError?.call(
-          "Failed to fetch recipe. Status Code: ${response.statusCode}",
-        );
+        onError?.call("Failed to fetch recipe. Status Code: ${response.statusCode}");
         return null;
       }
     } catch (e) {
-      onError?.call("Error parsing recipe JSON: $e");
+      onError?.call("Error fetching recipe: $e");
       return null;
     }
   }
@@ -276,67 +168,34 @@ class RecipeService {
     List<String> ingredients, {
     Function(String)? onError,
   }) async {
-    // 🔥 Get dietary preferences and allergies from Firestore
     final List<String> dietaryPrefs = await _getDietaryPreferences();
     final List<String> allergies = await _getAllergies();
 
-    String dietaryPart = dietaryPrefs.isNotEmpty
-        ? "suitable for ${dietaryPrefs.join(', ')} diet"
-        : "";
-    String allergyPart = allergies.isNotEmpty 
-        ? "excluding ${allergies.join(', ')}" 
-        : "";
-    
-    String query =
-        "recipes using only ${ingredients.join(', ')} $dietaryPart $allergyPart";
-
     final Map<String, dynamic> requestData = {
-      "contents": [
-        {
-          "role": "user",
-          "parts": [
-            {
-              "text":
-                  "Suggest 5 traditional recipes using only these ingredients: ${ingredients.join(', ')} $dietaryPart $allergyPart. "
-                  "Return a JSON array of recipes in this format without markdown or code block markers: "
-                  "[{\"name\": \"Recipe Name\", \"image_url\": \"\", \"ingredients\": [{\"name\": \"ingredient\", \"quantity\": \"amount\"}], \"instructions\": [\"Step 1\", \"Step 2\"]}]",
-            },
-          ],
-        },
-      ],
+      "ingredients": ingredients,
+      "dietaryPreferences": dietaryPrefs,
+      "allergies": allergies,
     };
 
     try {
       final response = await http.post(
-        Uri.parse(geminiUrl),
+        Uri.parse("$backendUrl/by-ingredients"),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode(requestData),
       );
 
       if (response.statusCode == 200) {
-        final jsonResponse = jsonDecode(response.body);
-        String content =
-            jsonResponse["candidates"][0]["content"]["parts"][0]["text"];
-        content =
-            content.replaceAll("```json", "").replaceAll("```", "").trim();
-        final decoded = jsonDecode(content);
-
-        if (decoded is List) {
-          List<Map<String, dynamic>> recipes =
-              decoded.map((item) => Map<String, dynamic>.from(item)).toList();
-          for (var recipe in recipes) {
-            recipe["image_url"] = await fetchImageUrl(recipe["name"]);
-            _recipeCache[recipe["name"]] = recipe;
-          }
-          return recipes;
-        } else {
-          onError?.call("Unexpected response format");
-          return [];
+        final List<dynamic> data = jsonDecode(response.body);
+        List<Map<String, dynamic>> recipes = 
+            data.map((item) => Map<String, dynamic>.from(item)).toList();
+        
+        for (var recipe in recipes) {
+          _recipeCache[recipe["name"]] = recipe;
         }
+        
+        return recipes;
       } else {
-        onError?.call(
-          "Failed to fetch recipes. Status Code: ${response.statusCode}",
-        );
+        onError?.call("Failed to fetch recipes. Status Code: ${response.statusCode}");
         return [];
       }
     } catch (e) {
@@ -345,123 +204,82 @@ class RecipeService {
     }
   }
 
+ // 📋 GET FULL RECIPES BY CATEGORY
+// 📋 GET FULL RECIPES BY CATEGORY
+static Future<List<Map<String, dynamic>>> getCategoryRecipes({
+  required String category,
+  int page = 1,
+  int limit = 10,
+}) async {
+  final List<String> preferences = await _getDietaryPreferences();
+  final List<String> allergies = await _getAllergies();
 
-  static Future<List<String>> getRecipeSuggestionsByCategoryAndPreference({
-    required String category,
-  }) async {
-    // 🔥 Get dietary preferences from Firestore
-    final List<String> preferences = await _getDietaryPreferences();
+  final Map<String, dynamic> requestData = {
+    "category": category,
+    "dietaryPreferences": preferences,
+    "allergies": allergies,
+    "page": page,
+    "limit": limit,
+  };
 
-    final now = DateTime.now();
-    String today = "${now.year}-${now.month}-${now.day}";
-    String timeOfDay = now.hour < 12
-        ? "morning"
-        : (now.hour < 18 ? "afternoon" : "evening");
-    int seed = now.millisecondsSinceEpoch % 1000;
+  try {
+    final response = await http.post(
+      Uri.parse("$backendUrl/suggestions-by-category"),
+      headers: {"Content-Type": "application/json"},
+      body: jsonEncode(requestData),
+    );
 
-    String dietaryPart = preferences.isNotEmpty
-        ? "suitable for someone with the following dietary preferences: ${preferences.join(', ')}"
-        : "without any specific dietary restrictions";
+    print("📋 Category status: ${response.statusCode}");
+    print("📋 Category body: ${response.body}");
 
-    final Map<String, dynamic> requestData = {
-      "contents": [
-        {
-          "role": "user",
-          "parts": [
-            {
-              "text":
-                  "Suggest 10 traditional and unique $category recipes $dietaryPart. "
-                  "Make sure these are ideal for the $timeOfDay of $today. "
-                  "Introduce variety using this number: $seed. "
-                  "Return only a valid JSON array like [\"Recipe 1\", \"Recipe 2\"]"
-            }
-          ]
-        }
-      ]
-    };
+    if (response.statusCode == 200) {
+      final decoded = jsonDecode(response.body);
 
-    try {
-      final response = await http.post(
-        Uri.parse(geminiUrl),
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode(requestData),
-      );
-
-      if (response.statusCode == 200) {
-        final jsonResponse = jsonDecode(response.body);
-        String content =
-            jsonResponse["candidates"][0]["content"]["parts"][0]["text"];
-        content =
-            content.replaceAll("```json", "").replaceAll("```", "").trim();
-        final decoded = jsonDecode(content);
-
-        if (decoded is List) {
-          return decoded.map<String>((item) => item.toString()).toList();
-        } else {
-          return [];
-        }
-      } else {
-        return [];
+      // ✅ FIXED: Extract recipes from the nested structure
+      final List<dynamic> recipes = decoded['recipes'] ?? [];
+      
+      // Optional: Handle pagination info if needed
+      final pagination = decoded['pagination'];
+      if (pagination != null) {
+        print("📄 Pagination: Page ${pagination['currentPage']}, Total: ${pagination['totalCount']}, HasMore: ${pagination['hasMore']}");
       }
-    } catch (e) {
-      print("❌ Error fetching suggestions: $e");
-      return [];
+
+      // Convert to List<Map<String, dynamic>>
+      return recipes
+          .map<Map<String, dynamic>>(
+              (r) => Map<String, dynamic>.from(r))
+          .toList();
+    } else {
+      print("❌ Failed to fetch category recipes. Status: ${response.statusCode}");
+      print("❌ Response: ${response.body}");
     }
+  } catch (e) {
+    print("❌ Category fetch error: $e");
   }
 
-  // 💡 RECIPE SUGGESTIONS (used for two-stage voice search)
+  return [];
+}
+
+
+  // 💡 RECIPE SUGGESTIONS (for voice search)
   static Future<List<String>> getRecipeSuggestions(String query) async {
-    // 🔥 Get dietary preferences from Firestore
     final List<String> preferences = await _getDietaryPreferences();
-    
-    final String dietaryPart = preferences.isNotEmpty
-        ? "suitable for someone with the following dietary preferences: ${preferences.join(', ')}"
-        : "";
 
     final Map<String, dynamic> requestData = {
-      "contents": [
-        {
-          "role": "user",
-          "parts": [
-            {
-              "text":
-                  "The user said '$query'. Suggest 4 specific, popular recipes that contain '$query' $dietaryPart. "
-                  "For example, if the query is 'chicken', suggest 'Chicken Tikka Masala'. If the query is 'pasta', suggest 'Spaghetti Carbonara'. "
-                  "Return ONLY a valid JSON array of the recipe names, like [\"Recipe 1\", \"Recipe 2\", \"Recipe 3\", \"Recipe 4\"]."
-            }
-          ]
-        }
-      ]
+      "query": query,
+      "dietaryPreferences": preferences,
     };
 
     try {
       final response = await http.post(
-        Uri.parse(geminiUrl),
+        Uri.parse("$backendUrl/suggestions"),
         headers: {"Content-Type": "application/json"},
         body: jsonEncode(requestData),
       );
 
       if (response.statusCode == 200) {
-        final jsonResponse = jsonDecode(response.body);
-        String content =
-            jsonResponse["candidates"][0]["content"]["parts"][0]["text"];
-        
-        // Clean up markdown and extra text
-        content =
-            content.replaceAll("```json", "").replaceAll("```", "").trim();
-        
-        final decoded = jsonDecode(content);
-
-        if (decoded is List) {
-          // Take the first 4 suggestions to keep the voice response brief
-          return decoded
-              .map<String>((item) => item.toString())
-              .take(4)
-              .toList();
-        } else {
-          // Fallback if Gemini doesn't return a list
-          return [];
-        }
+        final List<dynamic> data = jsonDecode(response.body);
+        return data.map<String>((item) => item.toString()).take(4).toList();
       } else {
         return [];
       }
@@ -471,18 +289,30 @@ class RecipeService {
     }
   }
 
+  // 🔄 GET MULTIPLE RECIPES
   static Future<List<Map<String, dynamic>>> getMultipleRecipes(
     List<String> recipeNames,
   ) async {
-    List<Map<String, dynamic>> recipes = [];
+    final Map<String, dynamic> requestData = {
+      "recipeNames": recipeNames,
+    };
 
-    for (String name in recipeNames) {
-      final recipe = await getRecipe(name);
-      if (recipe != null) {
-        recipes.add(recipe);
+    try {
+      final response = await http.post(
+        Uri.parse("$backendUrl/multiple"),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode(requestData),
+      );
+
+      if (response.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(response.body);
+        return data.map((item) => Map<String, dynamic>.from(item)).toList();
+      } else {
+        return [];
       }
+    } catch (e) {
+      print("❌ Error fetching multiple recipes: $e");
+      return [];
     }
-
-    return recipes;
   }
 }

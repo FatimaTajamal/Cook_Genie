@@ -6,7 +6,6 @@ import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import '../theme/theme_provider.dart';
 
 class GroceryController extends GetxController {
   var groceryList = <Map<String, dynamic>>[].obs;
@@ -38,7 +37,7 @@ class GroceryController extends GetxController {
         .collection('users')
         .doc(userId)
         .collection('groceryList')
-        .orderBy('name'); // order optional
+        .orderBy('name');
 
     _sub?.cancel();
     _sub = ref.snapshots().listen((snapshot) {
@@ -50,30 +49,35 @@ class GroceryController extends GetxController {
               })
           .toList();
     }, onError: (err) {
-      // handle/ log errors if needed
+      // ignore: avoid_print
       print("Grocery list listener error: $err");
     });
   }
 
-  /// Add a single item (skips duplicates)
   Future<void> addItem(String item) async {
     if (item.isEmpty || userId.isEmpty) return;
-    final exists = groceryList.any((e) => e['name'].toString().toLowerCase() == item.toLowerCase());
+    final exists = groceryList.any(
+      (e) => e['name'].toString().toLowerCase() == item.toLowerCase(),
+    );
     if (exists) return;
 
     await _firestore
         .collection('users')
         .doc(userId)
         .collection('groceryList')
-        .add({"name": item, "checked": false, "createdAt": FieldValue.serverTimestamp()});
+        .add({
+      "name": item,
+      "checked": false,
+      "createdAt": FieldValue.serverTimestamp()
+    });
   }
 
-  /// ✅ Add multiple items (skips duplicates) — this method was missing previously
   Future<void> addItems(List<String> items) async {
     if (items.isEmpty || userId.isEmpty) return;
 
-    // Normalize and filter unique new items (case-insensitive)
-    final existingNames = groceryList.map((e) => e['name'].toString().toLowerCase()).toSet();
+    final existingNames =
+        groceryList.map((e) => e['name'].toString().toLowerCase()).toSet();
+
     final newItems = <String>[];
     for (var raw in items) {
       final item = raw.trim();
@@ -85,19 +89,22 @@ class GroceryController extends GetxController {
     }
     if (newItems.isEmpty) return;
 
-    // Use batched writes for efficiency
     final batch = _firestore.batch();
-    final collectionRef = _firestore.collection('users').doc(userId).collection('groceryList');
+    final collectionRef =
+        _firestore.collection('users').doc(userId).collection('groceryList');
 
     for (var item in newItems) {
-      final docRef = collectionRef.doc(); // new doc id
-      batch.set(docRef, {"name": item, "checked": false, "createdAt": FieldValue.serverTimestamp()});
+      final docRef = collectionRef.doc();
+      batch.set(docRef, {
+        "name": item,
+        "checked": false,
+        "createdAt": FieldValue.serverTimestamp()
+      });
     }
 
     await batch.commit();
   }
 
-  /// Toggle checked state for an item (uses doc id)
   Future<void> toggleCheck(int index) async {
     if (userId.isEmpty) return;
     if (index < 0 || index >= groceryList.length) return;
@@ -114,7 +121,6 @@ class GroceryController extends GetxController {
         .update({"checked": !currentChecked});
   }
 
-  /// Remove an item by index (uses doc id)
   Future<void> removeItem(int index) async {
     if (userId.isEmpty) return;
     if (index < 0 || index >= groceryList.length) return;
@@ -128,7 +134,6 @@ class GroceryController extends GetxController {
         .delete();
   }
 
-  /// Clear all items for the user
   Future<void> clearAll() async {
     if (userId.isEmpty) return;
 
@@ -143,113 +148,147 @@ class GroceryController extends GetxController {
 }
 
 class GroceryListScreen extends StatelessWidget {
-  final GroceryController controller = Get.put(GroceryController());
   GroceryListScreen({super.key});
+
+  final GroceryController controller = Get.put(GroceryController());
+
+  // Theme constants (match your Home/Ingredient/Saved screens)
+  static const Color _bgTop = Color(0xFF0B0615);
+  static const Color _bgMid = Color(0xFF130A26);
+  static const Color _bgBottom = Color(0xFF1C0B33);
+  static const Color _accent = Color(0xFFB57BFF);
+  static const Color _accent2 = Color(0xFF7E3FF2);
 
   @override
   Widget build(BuildContext context) {
-    final themeProvider = Get.find<ThemeProvider>();
-    TextEditingController input = TextEditingController();
+    final input = TextEditingController();
 
     return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      backgroundColor: _bgTop,
       appBar: AppBar(
+        backgroundColor: const Color(0xFF120A22),
+        elevation: 0,
+        centerTitle: true,
         title: Text(
-          "My Grocery List",
+          "Grocery List",
           style: GoogleFonts.poppins(
-            fontWeight: FontWeight.w600,
-            color: Theme.of(context).appBarTheme.foregroundColor,
+            fontWeight: FontWeight.w700,
+            color: Colors.white,
           ),
         ),
-        centerTitle: true,
-        backgroundColor:
-            Theme.of(context).appBarTheme.backgroundColor ?? Colors.deepOrange,
-        foregroundColor:
-            Theme.of(context).appBarTheme.foregroundColor ?? Colors.white,
-        elevation: 0,
         actions: [
           IconButton(
-            icon: const Icon(Icons.delete_forever),
+            icon: const Icon(Icons.delete_forever_rounded),
             tooltip: "Clear All",
-            color:
-                Theme.of(context).appBarTheme.foregroundColor ?? Colors.white,
             onPressed: () async {
-              final confirm = await showDialog<bool>(
-                context: context,
-                builder: (_) => AlertDialog(
-                  title: Text(
-                    "Clear Grocery List",
-                    style: TextStyle(
-                      color: Theme.of(context).textTheme.titleLarge?.color,
-                    ),
-                  ),
-                  content: Text(
-                    "Are you sure you want to remove all items?",
-                    style: TextStyle(
-                      color: Theme.of(context).textTheme.bodyMedium?.color,
-                    ),
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, false),
-                      child: Text(
-                        "Cancel",
-                        style: TextStyle(
-                          color: Theme.of(context).textTheme.bodyMedium?.color,
-                        ),
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: () => Navigator.pop(context, true),
-                      child: Text(
-                        "Clear",
-                        style: TextStyle(
-                          color: Theme.of(context).textTheme.bodyMedium?.color,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-              if (confirm == true) await controller.clearAll();
+              final confirm = await _confirmClearDialog(context);
+              if (confirm == true) {
+                await controller.clearAll();
+                _snack(context, "Cleared grocery list");
+              }
             },
           ),
         ],
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildInputField(context, input),
-            const SizedBox(height: 20),
-            Text(
-              "Your Items",
-              style: GoogleFonts.poppins(
-                fontSize: 20,
-                fontWeight: FontWeight.w600,
-                color: Theme.of(context).textTheme.titleLarge?.color,
+      body: Stack(
+        children: [
+          _bgGradient(),
+          _bgStars(),
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _header(),
+                  const SizedBox(height: 14),
+                  _inputField(context, input),
+                  const SizedBox(height: 14),
+                  Text(
+                    "Your items",
+                    style: GoogleFonts.poppins(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white.withOpacity(0.92),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Expanded(child: _list(context)),
+                ],
               ),
             ),
-            const SizedBox(height: 12),
-            _buildGroceryList(context),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _buildInputField(BuildContext context, TextEditingController input) {
+  // ---------- UI PARTS ----------
+
+  Widget _header() {
+    return Stack(
+      children: [
+        Positioned(
+          right: -8,
+          top: -6,
+          child: Icon(
+            Icons.shopping_bag_rounded,
+            color: Colors.white.withOpacity(0.06),
+            size: 64,
+          ),
+        ),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              "What do you need today?",
+              style: GoogleFonts.poppins(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              "Add items, tick them off, and swipe to delete.",
+              style: GoogleFonts.poppins(
+                fontSize: 12.8,
+                height: 1.25,
+                color: Colors.white.withOpacity(0.62),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _inputField(BuildContext context, TextEditingController input) {
+    Future<void> addNow() async {
+      final text = input.text.trim();
+      if (text.isEmpty) return;
+      await controller.addItem(text);
+      input.clear();
+    }
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(18),
+        gradient: LinearGradient(
+          colors: [
+            _accent2.withOpacity(0.20),
+            _accent.withOpacity(0.10),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        border: Border.all(color: Colors.white.withOpacity(0.14)),
         boxShadow: [
           BoxShadow(
-            color: Theme.of(context).shadowColor.withOpacity(0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
+            color: _accent.withOpacity(0.18),
+            blurRadius: 18,
+            offset: const Offset(0, 10),
           ),
         ],
       ),
@@ -259,131 +298,262 @@ class GroceryListScreen extends StatelessWidget {
             child: TextField(
               controller: input,
               style: GoogleFonts.poppins(
-                fontSize: 16,
-                color: Theme.of(context).textTheme.bodyMedium?.color,
+                fontSize: 14.5,
+                color: Colors.white,
+                fontWeight: FontWeight.w500,
               ),
+              cursorColor: _accent,
               decoration: InputDecoration(
-                hintText: "Add grocery item...",
-                hintStyle: TextStyle(
-                  color: Theme.of(context)
-                      .textTheme
-                      .bodyMedium
-                      ?.color
-                      ?.withOpacity(0.5),
+                hintText: "Add grocery item (e.g., milk, eggs)",
+                hintStyle: GoogleFonts.poppins(
+                  color: Colors.white.withOpacity(0.45),
+                  fontSize: 13.5,
                 ),
                 border: InputBorder.none,
+                isDense: true,
               ),
-              onSubmitted: (val) async {
-                await controller.addItem(val.trim());
-                input.clear();
-              },
+              onSubmitted: (_) => addNow(),
             ),
           ),
-          IconButton(
-            icon: const Icon(
-              Icons.add_circle,
-              color: Colors.deepOrange,
-              size: 30,
+          const SizedBox(width: 10),
+          InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: addNow,
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                color: _accent,
+                boxShadow: [
+                  BoxShadow(
+                    color: _accent.withOpacity(0.35),
+                    blurRadius: 14,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              ),
+              child: const Icon(Icons.add_rounded, color: Colors.white, size: 22),
             ),
-            onPressed: () async {
-              await controller.addItem(input.text.trim());
-              input.clear();
-            },
+          )
+        ],
+      ),
+    );
+  }
+
+  Widget _list(BuildContext context) {
+    return Obx(() {
+      if (controller.groceryList.isEmpty) {
+        return Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18),
+            child: Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(22),
+                gradient: LinearGradient(
+                  colors: [
+                    _accent2.withOpacity(0.16),
+                    const Color(0xFF2A1246).withOpacity(0.35),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                border: Border.all(color: Colors.white.withOpacity(0.12)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.shopping_cart_outlined, size: 54, color: _accent),
+                  const SizedBox(height: 10),
+                  Text(
+                    "Your grocery list is empty",
+                    style: GoogleFonts.poppins(
+                      fontSize: 15.5,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white.withOpacity(0.92),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    "Add items above and check them off as you shop.",
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.poppins(
+                      fontSize: 12.8,
+                      height: 1.25,
+                      color: Colors.white.withOpacity(0.62),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }
+
+      return ListView.separated(
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.only(top: 2, bottom: 10),
+        itemCount: controller.groceryList.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 10),
+        itemBuilder: (context, index) {
+          final item = controller.groceryList[index];
+          final bool checked = (item["checked"] == true);
+
+          return Slidable(
+            key: ValueKey(item["id"]),
+            endActionPane: ActionPane(
+              motion: const DrawerMotion(),
+              children: [
+                SlidableAction(
+                  onPressed: (_) => controller.removeItem(index),
+                  backgroundColor: const Color(0xFFE74C3C),
+                  foregroundColor: Colors.white,
+                  icon: Icons.delete_rounded,
+                  label: 'Delete',
+                  borderRadius: BorderRadius.circular(18),
+                ),
+              ],
+            ),
+            child: Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(18),
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.white.withOpacity(0.06),
+                    _accent2.withOpacity(0.12),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                border: Border.all(color: Colors.white.withOpacity(0.10)),
+                boxShadow: [
+                  BoxShadow(
+                    color: _accent.withOpacity(0.10),
+                    blurRadius: 18,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              ),
+              child: ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                leading: Transform.scale(
+                  scale: 1.05,
+                  child: Checkbox(
+                    value: checked,
+                    activeColor: _accent,
+                    checkColor: Colors.white,
+                    side: BorderSide(color: Colors.white.withOpacity(0.35), width: 1.2),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                    onChanged: (_) => controller.toggleCheck(index),
+                  ),
+                ),
+                title: Text(
+                  (item["name"] ?? '').toString(),
+                  style: GoogleFonts.poppins(
+                    fontSize: 14.8,
+                    fontWeight: FontWeight.w700,
+                    color: checked
+                        ? Colors.white.withOpacity(0.55)
+                        : Colors.white.withOpacity(0.92),
+                    decoration: checked ? TextDecoration.lineThrough : null,
+                    decorationThickness: 2,
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      );
+    });
+  }
+
+  // ---------- DIALOG / SNACK ----------
+
+  Future<bool?> _confirmClearDialog(BuildContext context) {
+    return showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: const Color(0xFF120A22),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: Text(
+          "Clear Grocery List?",
+          style: GoogleFonts.poppins(
+            color: Colors.white,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        content: Text(
+          "This will remove all items from your list.",
+          style: GoogleFonts.poppins(
+            color: Colors.white.withOpacity(0.70),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: Text(
+              "Cancel",
+              style: GoogleFonts.poppins(color: Colors.white.withOpacity(0.75)),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(
+              "Clear",
+              style: GoogleFonts.poppins(color: _accent, fontWeight: FontWeight.w800),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildGroceryList(BuildContext context) {
-    return Expanded(
-      child: Obx(() {
-        if (controller.groceryList.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.shopping_cart_outlined,
-                  size: 60,
-                  color: Theme.of(
-                    context,
-                  ).textTheme.bodyMedium?.color?.withOpacity(0.4),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  "Your grocery list is empty",
-                  style: GoogleFonts.poppins(
-                    fontSize: 16,
-                    color: Theme.of(context)
-                        .textTheme
-                        .bodyMedium
-                        ?.color
-                        ?.withOpacity(0.6),
-                  ),
-                ),
-              ],
-            ),
-          );
-        }
+  void _snack(BuildContext context, String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: const Color(0xFF2A1246),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      ),
+    );
+  }
 
-        return ListView.separated(
-          itemCount: controller.groceryList.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 8),
-          itemBuilder: (context, index) {
-            final item = controller.groceryList[index];
-            return Slidable(
-              key: ValueKey(item["id"]),
-              endActionPane: ActionPane(
-                motion: const DrawerMotion(),
-                children: [
-                  SlidableAction(
-                    onPressed: (_) => controller.removeItem(index),
-                    backgroundColor: Colors.red,
-                    foregroundColor: Colors.white,
-                    icon: Icons.delete,
-                    label: 'Delete',
-                  ),
-                ],
-              ),
-              child: Container(
-                decoration: BoxDecoration(
-                  color: Theme.of(context).cardColor,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Theme.of(context).shadowColor.withOpacity(0.1),
-                      blurRadius: 4,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: ListTile(
-                  leading: Checkbox(
-                    value: item["checked"],
-                    activeColor: Colors.deepOrange,
-                    checkColor: Colors.white,
-                    onChanged: (_) => controller.toggleCheck(index),
-                  ),
-                  title: Text(
-                    item["name"],
-                    style: GoogleFonts.poppins(
-                      fontSize: 17,
-                      decoration:
-                          item["checked"] ? TextDecoration.lineThrough : null,
-                      color: item["checked"]
-                          ? Theme.of(
-                              context,
-                            ).textTheme.bodyMedium?.color?.withOpacity(0.6)
-                          : Theme.of(context).textTheme.bodyMedium?.color,
-                    ),
-                  ),
-                ),
-              ),
-            );
-          },
-        );
-      }),
+  // ---------- BACKGROUND ----------
+
+  Widget _bgGradient() {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          colors: [_bgTop, _bgMid, _bgBottom],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ),
+      ),
+    );
+  }
+
+  Widget _bgStars() {
+    return IgnorePointer(
+      child: Stack(
+        children: [
+          Positioned(
+            left: 22,
+            top: 110,
+            child: Icon(Icons.auto_awesome, color: Colors.white.withOpacity(0.06), size: 28),
+          ),
+          Positioned(
+            right: 18,
+            top: 160,
+            child: Icon(Icons.auto_awesome, color: Colors.white.withOpacity(0.05), size: 34),
+          ),
+          Positioned(
+            right: 60,
+            top: 380,
+            child: Icon(Icons.auto_awesome, color: Colors.white.withOpacity(0.05), size: 26),
+          ),
+        ],
+      ),
     );
   }
 }
