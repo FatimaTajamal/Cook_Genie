@@ -15,8 +15,13 @@ class UserService {
     required List<String> allergies,
     String? profileImagePath,
   }) async {
-    final userId = _auth.currentUser?.uid;
+    final user = _auth.currentUser;
+    final userId = user?.uid;
+
     if (userId == null) return;
+
+    // ✅ Do not save profile data until email is verified
+    if (user?.emailVerified == false) return;
 
     try {
       await _firestore.collection('users').doc(userId).set({
@@ -28,7 +33,7 @@ class UserService {
         'allergies': allergies,
         'profileImagePath': profileImagePath,
         'lastUpdated': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true)); // merge: true updates without overwriting other fields
+      }, SetOptions(merge: true));
     } catch (e) {
       print('Error saving preferences: $e');
       rethrow;
@@ -54,8 +59,12 @@ class UserService {
 
   // Save only dietary preferences (for quick updates)
   Future<void> saveDietaryPreferences(List<String> preferences) async {
-    final userId = _auth.currentUser?.uid;
+    final user = _auth.currentUser;
+    final userId = user?.uid;
     if (userId == null) return;
+
+    // ✅ block until verified
+    if (user?.emailVerified == false) return;
 
     try {
       await _firestore.collection('users').doc(userId).update({

@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
+
 import 'home_screen.dart';
 import 'grocery_list_screen.dart';
 import 'profile_settings_screen.dart';
 import 'IngredientSearchScreen.dart';
 import 'WeeklyMealPlanScreen.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:convert';
+import 'login_screen.dart';
+import 'verify_email_screen.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -30,6 +34,37 @@ class _MainScreenState extends State<MainScreen> {
     super.initState();
     _buildScreens();
     _loadSavedRecipes();
+
+    // ✅ Guard AFTER first frame to avoid context errors
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _guardEmailVerified();
+    });
+  }
+
+  Future<void> _guardEmailVerified() async {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      if (!mounted) return;
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        (_) => false,
+      );
+      return;
+    }
+
+    await user.reload();
+    final fresh = FirebaseAuth.instance.currentUser;
+
+    if (fresh != null && !fresh.emailVerified) {
+      if (!mounted) return;
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const VerifyEmailScreen()),
+        (_) => false,
+      );
+    }
   }
 
   Future<void> _loadSavedRecipes() async {

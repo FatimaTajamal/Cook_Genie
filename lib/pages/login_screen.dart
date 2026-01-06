@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import 'main_screen.dart';
 import 'signup_screen.dart';
+import 'verify_email_screen.dart';
 import '../services/firebase_auth_service.dart';
 import '../global/toast.dart';
 import 'forgot_password.dart';
@@ -50,11 +51,24 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       }
 
+      // Enforce email verification
+      final verified = await _auth.reloadAndIsEmailVerified();
+      if (!verified) {
+        // resend once to help user
+        try {
+          await _auth.sendVerificationEmail();
+        } catch (_) {}
+
+        await _auth.signOut();
+        showToast(message: "Please verify your email first. Link sent again ✅");
+        Get.off(() => const VerifyEmailScreen());
+        return;
+      }
+
       showToast(message: "Welcome back 👋");
       Get.off(() => const MainScreen());
     } catch (e) {
       debugPrint('Sign-In Error: $e');
-      // FirebaseAuthService already handles messaging, keeping this safe.
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -110,18 +124,6 @@ class _LoginScreenState extends State<LoginScreen> {
       default:
         return e.message ?? 'An error occurred. Please try again.';
     }
-  }
-
-  void _showSnack(String msg) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        backgroundColor: const Color(0xFF2A1246),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      ),
-    );
   }
 
   // ---------- BACKGROUND ----------
@@ -327,9 +329,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   color: Colors.white,
                 ),
               )
-            : Text(
-                text,
-                style: const TextStyle(
+            : const Text(
+                "Log in",
+                style: TextStyle(
                   fontWeight: FontWeight.w900,
                   letterSpacing: 0.2,
                   fontSize: 15.5,
@@ -407,7 +409,6 @@ class _LoginScreenState extends State<LoginScreen> {
           SafeArea(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                // ✅ Works on small phones too (no overflow)
                 return SingleChildScrollView(
                   padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
                   child: ConstrainedBox(
@@ -502,10 +503,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     ],
                                   ),
                                   const SizedBox(height: 4),
-                                  _primaryButton(
-                                    text: "Log in",
-                                    onTap: _signIn,
-                                  ),
+                                  _primaryButton(onTap: _signIn, text: "Log in"),
                                   const SizedBox(height: 12),
                                   _divider(),
                                   const SizedBox(height: 12),

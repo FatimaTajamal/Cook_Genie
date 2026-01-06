@@ -14,7 +14,7 @@ import 'user_service.dart';
 class IngredientSearchScreen extends StatefulWidget {
   final List<Map<String, dynamic>> savedRecipes;
 
-  const IngredientSearchScreen({super.key, required this.savedRecipes});
+  const IngredientSearchScreen({Key? key, required this.savedRecipes}) : super(key: key);
 
   @override
   State<IngredientSearchScreen> createState() => _IngredientSearchScreenState();
@@ -30,7 +30,7 @@ class _IngredientSearchScreenState extends State<IngredientSearchScreen> {
   bool _isLoading = false;
   bool _isListening = false;
 
-  // Theme constants (matches Home/Saved screens)
+  // Theme constants
   static const Color _bgTop = Color(0xFF0B0615);
   static const Color _bgMid = Color(0xFF130A26);
   static const Color _bgBottom = Color(0xFF1C0B33);
@@ -78,44 +78,88 @@ class _IngredientSearchScreenState extends State<IngredientSearchScreen> {
   }
 
   void _addIngredient(String input) {
-    if (input.isEmpty) return;
+  if (input.isEmpty) return;
 
-    final newIngredients = input
-        .split(',')
-        .map((e) => e.trim())
-        .where((e) => e.isNotEmpty)
-        .toList();
+  final newIngredients = input
+      .split(',')
+      .map((e) => e.trim().toLowerCase()) // ✅ Normalize to lowercase
+      .where((e) => e.isNotEmpty)
+      .toList();
 
-    setState(() {
-      _ingredients = <String>{..._ingredients, ...newIngredients}.toList();
-      _controller.text = _ingredients.join(', ');
-    });
+  if (!mounted) return;
+  setState(() {
+    // ✅ Use Set to avoid duplicates and normalize all ingredients
+    _ingredients = <String>{
+      ..._ingredients.map((e) => e.toLowerCase()),
+      ...newIngredients
+    }.toList();
+    _controller.text = _ingredients.join(', ');
+  });
 
-    _saveIngredients();
+  _saveIngredients();
+}
+
+// ✅ Add a method to update ingredients from text field without duplicating
+void _syncIngredientsFromTextField() {
+  final text = _controller.text.trim();
+  if (text.isEmpty) return;
+
+  final parsed = text
+      .split(',')
+      .map((e) => e.trim().toLowerCase())
+      .where((e) => e.isNotEmpty)
+      .toSet()
+      .toList();
+
+  if (!mounted) return;
+  setState(() {
+    _ingredients = parsed;
+  });
+}
+
+Future<void> _searchRecipes() async {
+  // ✅ Sync ingredients from text field before searching
+  _syncIngredientsFromTextField();
+
+  if (_ingredients.isEmpty) {
+    _showSnack('Please enter at least one ingredient');
+    return;
   }
 
-  Future<void> _searchRecipes() async {
-    if (_ingredients.isEmpty) {
-      _showSnack('Please enter at least one ingredient');
-      return;
-    }
+  debugPrint('🔍 Searching with ingredients: $_ingredients'); // ✅ Debug log
 
-    setState(() {
-      _isLoading = true;
-      _recipes = [];
-    });
+  if (!mounted) return;
+  setState(() {
+    _isLoading = true;
+    _recipes = [];
+  });
 
+  try {
     final recipes = await RecipeService.getRecipesByIngredients(
       _ingredients,
-      onError: (error) => _showSnack(error),
+      onError: (error) {
+        if (mounted) _showSnack(error);
+      },
     );
 
+    debugPrint('✅ Received ${recipes.length} recipes');
+    if (recipes.isNotEmpty) {
+      debugPrint('📋 First recipe: ${recipes[0]['name']}');
+    }
+    
     if (!mounted) return;
     setState(() {
       _recipes = recipes;
       _isLoading = false;
     });
+  } catch (e) {
+    debugPrint('❌ Error in _searchRecipes: $e');
+    if (!mounted) return;
+    setState(() {
+      _isLoading = false;
+    });
   }
+}
 
   Future<void> _listen() async {
     if (kIsWeb) {
@@ -154,6 +198,7 @@ class _IngredientSearchScreenState extends State<IngredientSearchScreen> {
         if (!mounted) return;
 
         if (val.finalResult) {
+          if (!mounted) return;
           setState(() {
             _controller.text = val.recognizedWords;
             _isListening = false;
@@ -161,6 +206,7 @@ class _IngredientSearchScreenState extends State<IngredientSearchScreen> {
           _addIngredient(val.recognizedWords);
           await _searchRecipes();
         } else {
+          if (!mounted) return;
           setState(() {
             _controller.text = val.recognizedWords;
           });
@@ -179,40 +225,45 @@ class _IngredientSearchScreenState extends State<IngredientSearchScreen> {
   }
 
   void _addMissingIngredientsToGroceryList(Map<String, dynamic> recipe) {
-    final groceryController = Get.find<GroceryController>();
+    try {
+      final groceryController = Get.find<GroceryController>();
 
-    final recipeIngredients = (recipe['ingredients'] as List?)
-            ?.map((i) {
-              final name = (i is Map ? i['name'] : null)?.toString() ?? '';
-              final qty = (i is Map ? i['quantity'] : null)?.toString() ?? '';
-              return {
-                'name': name,
-                'quantity': qty,
-                'category': _inferCategory(name),
-                'isPurchased': false,
-              };
-            })
-            .where((m) => (m['name'] as String).trim().isNotEmpty)
-            .toList() ??
-        [];
+      final recipeIngredients = (recipe['ingredients'] as List?)
+              ?.map((i) {
+                final name = (i is Map ? i['name'] : null)?.toString() ?? '';
+                final qty = (i is Map ? i['quantity'] : null)?.toString() ?? '';
+                return {
+                  'name': name,
+                  'quantity': qty,
+                  'category': _inferCategory(name),
+                  'isPurchased': false,
+                };
+              })
+              .where((m) => (m['name'] as String).trim().isNotEmpty)
+              .toList() ??
+          [];
 
-    final userHave = _ingredients.map((e) => e.toLowerCase().trim()).toSet();
+      final userHave = _ingredients.map((e) => e.toLowerCase().trim()).toSet();
 
-    final missing = recipeIngredients.where((ing) {
-      final name = (ing['name'] as String).toLowerCase().trim();
-      return name.isNotEmpty && !userHave.contains(name);
-    }).toList();
+      final missing = recipeIngredients.where((ing) {
+        final name = (ing['name'] as String).toLowerCase().trim();
+        return name.isNotEmpty && !userHave.contains(name);
+      }).toList();
 
-    if (missing.isEmpty) {
-      _showSnack('No missing ingredients to add');
-      return;
+      if (missing.isEmpty) {
+        _showSnack('No missing ingredients to add');
+        return;
+      }
+
+      final List<String> names =
+          missing.map((i) => (i['name'] ?? '').toString()).toList();
+
+      groceryController.addItems(names);
+      _showSnack('Added ${names.join(', ')} to grocery list');
+    } catch (e) {
+      _showSnack('Error adding to grocery list');
+      debugPrint('❌ Error: $e');
     }
-
-    final List<String> names =
-        missing.map((i) => (i['name'] ?? '').toString()).toList();
-
-    groceryController.addItems(names);
-    _showSnack('Added ${names.join(', ')} to grocery list');
   }
 
   String _inferCategory(String ingredient) {
@@ -239,7 +290,6 @@ class _IngredientSearchScreenState extends State<IngredientSearchScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // ✅ prevents keyboard from forcing overflow in tight layouts
       resizeToAvoidBottomInset: true,
       backgroundColor: _bgTop,
       appBar: AppBar(
@@ -257,46 +307,111 @@ class _IngredientSearchScreenState extends State<IngredientSearchScreen> {
           _bgGradient(),
           _bgStars(),
           SafeArea(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                return SingleChildScrollView(
-                  physics: const BouncingScrollPhysics(),
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-                  child: ConstrainedBox(
-                    // ✅ forces content to fill screen height, prevents “tiny overflow”
-                    constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                    child: IntrinsicHeight(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _header(),
-                          const SizedBox(height: 14),
-                          _inputRow(),
-                          const SizedBox(height: 10),
-                          _chipsWrapScrollable(),
-                          const SizedBox(height: 12),
-                          _searchButton(),
-                          const SizedBox(height: 14),
-
-                          // ✅ This section takes remaining space, but also works inside scroll
-                          Expanded(
-                            child: SizedBox(
-                              width: double.infinity,
-                              child: _results(),
-                            ),
-                          ),
-
-                          // ✅ tiny safe padding to avoid bottom notch/gesture bar clipping
-                          const SizedBox(height: 6),
-                        ],
-                      ),
-                    ),
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _header(),
+                      const SizedBox(height: 14),
+                      _inputRow(),
+                      const SizedBox(height: 10),
+                      _chipsWrapScrollable(),
+                      const SizedBox(height: 12),
+                      _searchButton(),
+                      const SizedBox(height: 14),
+                    ],
                   ),
-                );
-              },
+                ),
+                Expanded(
+                  child: _buildResultsSection(),
+                ),
+              ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildResultsSection() {
+    if (_isLoading) {
+      return const Center(
+        child: SizedBox(
+          width: 34,
+          height: 34,
+          child: CircularProgressIndicator(strokeWidth: 3),
+        ),
+      );
+    }
+
+    if (_recipes.isEmpty) {
+      return Center(child: _emptyState());
+    }
+
+    return ListView.separated(
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+      itemCount: _recipes.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 10),
+      itemBuilder: (context, index) {
+        final recipe = _recipes[index];
+        final name = (recipe['name'] ?? 'No Title').toString();
+        final ingredientsText = (recipe['ingredients'] as List?)
+                ?.map((i) => (i is Map ? i['name'] : i).toString())
+                .where((s) => s.trim().isNotEmpty)
+                .take(8)
+                .join(', ') ??
+            '';
+        return _recipeCard(recipe, name, ingredientsText);
+      },
+    );
+  }
+
+  Widget _emptyState() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 18),
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(22),
+          gradient: LinearGradient(
+            colors: [
+              _accent2.withOpacity(0.16),
+              const Color(0xFF2A1246).withOpacity(0.35),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          border: Border.all(color: Colors.white.withOpacity(0.12)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.search_rounded, size: 54, color: _accent),
+            const SizedBox(height: 10),
+            Text(
+              'No recipes found.',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w900,
+                color: Colors.white.withOpacity(0.92),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Try adding more ingredients or simplify your list.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.65),
+                fontSize: 13,
+                height: 1.25,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -419,7 +534,6 @@ class _IngredientSearchScreenState extends State<IngredientSearchScreen> {
     );
   }
 
-  // ✅ FIX: chips can expand a lot -> we cap it, scroll inside if too many
   Widget _chipsWrapScrollable() {
     if (_ingredients.isEmpty) {
       return Text(
@@ -429,7 +543,7 @@ class _IngredientSearchScreenState extends State<IngredientSearchScreen> {
     }
 
     return ConstrainedBox(
-      constraints: const BoxConstraints(maxHeight: 120), // ✅ prevents overflow
+      constraints: const BoxConstraints(maxHeight: 120),
       child: SingleChildScrollView(
         physics: const BouncingScrollPhysics(),
         child: Wrap(
@@ -465,6 +579,7 @@ class _IngredientSearchScreenState extends State<IngredientSearchScreen> {
                     const SizedBox(width: 6),
                     GestureDetector(
                       onTap: () {
+                        if (!mounted) return;
                         setState(() {
                           _ingredients.remove(ingredient);
                           _controller.text = _ingredients.join(', ');
@@ -487,183 +602,109 @@ class _IngredientSearchScreenState extends State<IngredientSearchScreen> {
     );
   }
 
-  Widget _searchButton() {
-    return SizedBox(
-      width: double.infinity,
-      height: 50,
-      child: ElevatedButton(
-        onPressed: _isLoading ? null : _searchRecipes,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: _accent,
-          foregroundColor: Colors.white,
-          disabledBackgroundColor: _accent.withOpacity(0.35),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          elevation: 0,
+ Widget _searchButton() {
+  return SizedBox(
+    width: double.infinity,
+    height: 50,
+    child: ElevatedButton(
+      onPressed: _isLoading ? null : () {
+        // ✅ First, parse and add any new ingredients from text field
+        _addIngredient(_controller.text);
+        // ✅ Then search
+        _searchRecipes();
+      },
+      style: ElevatedButton.styleFrom(
+        backgroundColor: _accent,
+        foregroundColor: Colors.white,
+        disabledBackgroundColor: _accent.withOpacity(0.35),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        elevation: 0,
+      ),
+      child: const Text(
+        'Search Recipes',
+        style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 0.2),
+      ),
+    ),
+  );
+}
+  Widget _recipeCard(Map<String, dynamic> recipe, String name, String ingredientsText) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: () => _openRecipe(recipe),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          gradient: LinearGradient(
+            colors: [
+              Colors.white.withOpacity(0.06),
+              _accent2.withOpacity(0.12),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          border: Border.all(color: Colors.white.withOpacity(0.10)),
+          boxShadow: [
+            BoxShadow(
+              color: _accent.withOpacity(0.10),
+              blurRadius: 18,
+              offset: const Offset(0, 10),
+            ),
+          ],
         ),
-        child: const Text(
-          'Search Recipes',
-          style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 0.2),
+        child: Row(
+          children: [
+            Container(
+              width: 46,
+              height: 46,
+              decoration: BoxDecoration(
+                color: _accent.withOpacity(0.18),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.white.withOpacity(0.10)),
+              ),
+              child: const Icon(Icons.restaurant_rounded, color: Colors.white),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 15.5,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    ingredientsText,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.65),
+                      fontSize: 12.5,
+                      height: 1.25,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            IconButton(
+              icon: const Icon(Icons.add_shopping_cart_rounded),
+              color: Colors.white.withOpacity(0.85),
+              onPressed: () => _addMissingIngredientsToGroceryList(recipe),
+              tooltip: 'Add missing to grocery',
+            ),
+          ],
         ),
       ),
     );
   }
-
-  Widget _results() {
-    if (_isLoading) {
-      return const Center(
-        child: SizedBox(
-          width: 34,
-          height: 34,
-          child: CircularProgressIndicator(strokeWidth: 3),
-        ),
-      );
-    }
-
-    if (_recipes.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 18),
-          child: Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(22),
-              gradient: LinearGradient(
-                colors: [
-                  _accent2.withOpacity(0.16),
-                  const Color(0xFF2A1246).withOpacity(0.35),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              border: Border.all(color: Colors.white.withOpacity(0.12)),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.search_rounded, size: 54, color: _accent),
-                const SizedBox(height: 10),
-                Text(
-                  'No recipes found.',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
-                    color: Colors.white.withOpacity(0.92),
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Try adding more ingredients or simplify your list.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.65),
-                    fontSize: 13,
-                    height: 1.25,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
-    // ✅ works fine inside our Expanded + scroll container
-    return ListView.separated(
-      padding: const EdgeInsets.only(top: 4, bottom: 10),
-      itemCount: _recipes.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 10),
-      itemBuilder: (context, index) {
-        final recipe = _recipes[index];
-        final name = (recipe['name'] ?? 'No Title').toString();
-
-        final ingredientsText = (recipe['ingredients'] as List?)
-                ?.map((i) => (i is Map ? i['name'] : i).toString())
-                .where((s) => s.trim().isNotEmpty)
-                .take(8)
-                .join(', ') ??
-            '';
-
-        return InkWell(
-          borderRadius: BorderRadius.circular(20),
-          onTap: () => _openRecipe(recipe),
-          child: Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(20),
-              gradient: LinearGradient(
-                colors: [
-                  Colors.white.withOpacity(0.06),
-                  _accent2.withOpacity(0.12),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              border: Border.all(color: Colors.white.withOpacity(0.10)),
-              boxShadow: [
-                BoxShadow(
-                  color: _accent.withOpacity(0.10),
-                  blurRadius: 18,
-                  offset: const Offset(0, 10),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 46,
-                  height: 46,
-                  decoration: BoxDecoration(
-                    color: _accent.withOpacity(0.18),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Colors.white.withOpacity(0.10)),
-                  ),
-                  child: const Icon(Icons.restaurant_rounded, color: Colors.white),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 15.5,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        ingredientsText,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.65),
-                          fontSize: 12.5,
-                          height: 1.25,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                IconButton(
-                  icon: const Icon(Icons.add_shopping_cart_rounded),
-                  color: Colors.white.withOpacity(0.85),
-                  onPressed: () => _addMissingIngredientsToGroceryList(recipe),
-                  tooltip: 'Add missing to grocery',
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  // ---------- BACKGROUND ----------
 
   Widget _bgGradient() {
     return Container(

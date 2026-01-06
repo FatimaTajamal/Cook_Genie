@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import '../services/firebase_auth_service.dart';
-import 'user_service.dart';
 import '../global/toast.dart';
-import '../pages/login_screen.dart';
+import 'verify_email_screen.dart';
 
 class SignUpPage extends StatefulWidget {
   const SignUpPage({super.key});
@@ -14,7 +12,6 @@ class SignUpPage extends StatefulWidget {
 
 class _SignUpPageState extends State<SignUpPage> {
   final FirebaseAuthService _auth = FirebaseAuthService();
-  final UserService _userService = UserService();
 
   final _formKey = GlobalKey<FormState>();
 
@@ -49,18 +46,6 @@ class _SignUpPageState extends State<SignUpPage> {
   bool _isEmailValid(String email) {
     final emailRegex = RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$');
     return emailRegex.hasMatch(email);
-  }
-
-  void _showSnack(String msg) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        backgroundColor: const Color(0xFF2A1246),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      ),
-    );
   }
 
   // ---------- BACKGROUND ----------
@@ -144,9 +129,9 @@ class _SignUpPageState extends State<SignUpPage> {
             Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                const Text(
                   "CookGenie",
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w900,
                     fontSize: 26,
@@ -166,9 +151,9 @@ class _SignUpPageState extends State<SignUpPage> {
           ],
         ),
         const SizedBox(height: 14),
-        Text(
+        const Text(
           "Let’s get you started",
-          style: const TextStyle(
+          style: TextStyle(
             color: Colors.white,
             fontWeight: FontWeight.w900,
             fontSize: 22,
@@ -297,84 +282,31 @@ class _SignUpPageState extends State<SignUpPage> {
     }
 
     try {
-      await _auth.signUpWithEmailAndPassword(email, password);
+      final user = await _auth.signUpWithEmailAndPassword(email, password);
 
-      User? currentUser = FirebaseAuth.instance.currentUser;
-
-      if (currentUser == null) {
-        showToast(message: "Signup failed. Try again.");
+      if (user == null) {
         setState(() => _isSigningUp = false);
         return;
       }
 
-      // Reload user for fresh state
-      await currentUser.reload();
-      currentUser = FirebaseAuth.instance.currentUser;
+      // Send verification email
+      await _auth.sendVerificationEmail();
 
-      // Create initial Firestore profile (don’t block signup if it fails)
-      try {
-        await _userService.saveUserPreferences(
-          name: '$firstName $lastName',
-          age: '',
-          gender: '',
-          dietaryPreferences: [],
-          availableIngredients: [],
-          allergies: [],
-          profileImagePath: null,
-        );
-      } catch (e) {
-        debugPrint("❌ Firestore profile create error: $e");
-      }
-
-      if (currentUser != null && !currentUser.emailVerified) {
-        try {
-          final actionCodeSettings = ActionCodeSettings(
-            url: 'https://cook-genie-2600f.web.app/verify',
-            handleCodeInApp: true,
-            androidPackageName:
-                'com.yourcompany.yourapp', // TODO: replace with your package
-            androidInstallApp: true,
-            androidMinimumVersion: '12',
-          );
-          await currentUser.sendEmailVerification(actionCodeSettings);
-        } catch (e) {
-          debugPrint("❌ Verification email failed: $e");
-          showToast(
-              message: "Failed to send verification email. Please try again.");
-          setState(() => _isSigningUp = false);
-          return;
-        }
-      }
-
-      showToast(
-        message: "Account created! Please verify your email, then log in.",
-      );
+      showToast(message: "Verification email sent. Please verify to continue.");
 
       if (!mounted) return;
       Navigator.pushAndRemoveUntil(
         context,
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        MaterialPageRoute(
+          builder: (_) => VerifyEmailScreen(
+            pendingName: "$firstName $lastName",
+          ),
+        ),
         (route) => false,
       );
-    } on FirebaseAuthException catch (e) {
-      String errorMessage = "Signup failed.";
-      switch (e.code) {
-        case 'weak-password':
-          errorMessage = "Password is too weak. Use at least 6 characters.";
-          break;
-        case 'email-already-in-use':
-          errorMessage = "An account already exists with this email.";
-          break;
-        case 'invalid-email':
-          errorMessage = "Invalid email address.";
-          break;
-        default:
-          errorMessage = e.message ?? "Signup failed.";
-      }
-      showToast(message: errorMessage);
     } catch (e) {
-      debugPrint("❌ Unexpected signup error: $e");
-      showToast(message: "An unexpected error occurred. Please try again.");
+      debugPrint("❌ Signup error: $e");
+      showToast(message: "Signup failed. Please try again.");
     } finally {
       if (mounted) setState(() => _isSigningUp = false);
     }
@@ -391,7 +323,6 @@ class _SignUpPageState extends State<SignUpPage> {
           SafeArea(
             child: LayoutBuilder(
               builder: (context, constraints) {
-                // ✅ phone-safe: no overflow
                 return SingleChildScrollView(
                   padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
                   child: ConstrainedBox(
@@ -486,8 +417,8 @@ class _SignUpPageState extends State<SignUpPage> {
                                       label: "Password",
                                       icon: Icons.lock_rounded,
                                       suffix: IconButton(
-                                        onPressed: () =>
-                                            setState(() => _obscure1 = !_obscure1),
+                                        onPressed: () => setState(
+                                            () => _obscure1 = !_obscure1),
                                         icon: Icon(
                                           _obscure1
                                               ? Icons.visibility_rounded
@@ -517,8 +448,8 @@ class _SignUpPageState extends State<SignUpPage> {
                                       label: "Confirm password",
                                       icon: Icons.lock_outline_rounded,
                                       suffix: IconButton(
-                                        onPressed: () =>
-                                            setState(() => _obscure2 = !_obscure2),
+                                        onPressed: () => setState(
+                                            () => _obscure2 = !_obscure2),
                                         icon: Icon(
                                           _obscure2
                                               ? Icons.visibility_rounded
@@ -549,36 +480,14 @@ class _SignUpPageState extends State<SignUpPage> {
                             ),
                           ),
                           const Spacer(),
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 10),
                           Center(
-                            child: Wrap(
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              children: [
-                                Text(
-                                  "Already have an account? ",
-                                  style: TextStyle(
-                                    color: Colors.white.withOpacity(0.70),
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                GestureDetector(
-                                  onTap: () {
-                                    Navigator.pushAndRemoveUntil(
-                                      context,
-                                      MaterialPageRoute(
-                                          builder: (_) => const LoginScreen()),
-                                      (route) => false,
-                                    );
-                                  },
-                                  child: const Text(
-                                    "Log in",
-                                    style: TextStyle(
-                                      color: _accent,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                ),
-                              ],
+                            child: Text(
+                              "After signup, verify email to access the app.",
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.white.withOpacity(0.55),
+                              ),
                             ),
                           ),
                           const SizedBox(height: 10),

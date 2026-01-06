@@ -56,8 +56,7 @@ class RecipeService {
     return [];
   }
 
-  // 🔥 FIRESTORE HELPER: Get Available Ingredients
-  static Future<List<String>> _getAvailableIngredients() async {
+    static Future<List<String>> _getAvailableIngredients() async {
     try {
       final userId = FirebaseAuth.instance.currentUser?.uid;
       if (userId == null) return [];
@@ -75,6 +74,8 @@ class RecipeService {
     }
     return [];
   }
+
+
 
   // 🎤 VOICE SEARCH
   Future<void> listenAndSearch(
