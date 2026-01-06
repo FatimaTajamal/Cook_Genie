@@ -1,7 +1,8 @@
-// WeeklyMealPlanScreen.dart
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'RecipeScreen.dart';
+import 'RecipeSearch.dart';
 
 class WeeklyMealPlanScreen extends StatefulWidget {
   const WeeklyMealPlanScreen({super.key});
@@ -16,6 +17,7 @@ class _WeeklyMealPlanScreenState extends State<WeeklyMealPlanScreen> {
   double caloriesIntake = 2000;
   bool isGenerating = false;
   Map<String, List<Map<String, dynamic>>>? weeklyPlan;
+  String? errorMessage;
 
   final List<String> diets = [
     'None',
@@ -42,83 +44,105 @@ class _WeeklyMealPlanScreenState extends State<WeeklyMealPlanScreen> {
   static const Color _accent = Color(0xFFB57BFF);
   static const Color _accent2 = Color(0xFF7E3FF2);
 
+  // Update this URL to match your backend
+  static const String API_BASE_URL = 'https://database-six-kappa.vercel.app';
+
   Future<void> _generateMealPlan() async {
-    setState(() => isGenerating = true);
+    setState(() {
+      isGenerating = true;
+      errorMessage = null;
+    });
 
     try {
+      print('📤 Sending request to: $API_BASE_URL/generate-meal-plan');
+      print('📋 Request body: diet=$selectedDiet, goal=$selectedGoal, calories=$caloriesIntake');
+
       final response = await http.post(
-        Uri.parse('https://database-six-kappa.vercel.app/generate-meal-plan'),
+        Uri.parse('$API_BASE_URL/generate-meal-plan'),
         headers: {'Content-Type': 'application/json'},
         body: json.encode({
           'diet': selectedDiet,
           'goal': selectedGoal,
-          'calories': caloriesIntake,
+          'calories': caloriesIntake.toInt(),
         }),
+      ).timeout(
+        const Duration(seconds: 90),
+        onTimeout: () {
+          throw Exception('Request timed out. Please try again.');
+        },
       );
+
+      print('📥 Response status: ${response.statusCode}');
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
+        print('✅ Response received: ${data.keys}');
+        
         setState(() {
           weeklyPlan = _parseMealPlan(data);
           isGenerating = false;
         });
+        
+        print('✅ Meal plan parsed successfully');
       } else {
+        final errorData = json.decode(response.body);
         setState(() {
-          weeklyPlan = _generateMockPlan();
+          errorMessage = errorData['error'] ?? 'Failed to generate meal plan (Status: ${response.statusCode})';
           isGenerating = false;
         });
+        print('❌ Error: $errorMessage');
       }
     } catch (e) {
       setState(() {
-        weeklyPlan = _generateMockPlan();
+        errorMessage = 'Error: ${e.toString()}';
         isGenerating = false;
       });
+      print('❌ Exception: $e');
     }
   }
 
   Map<String, List<Map<String, dynamic>>> _parseMealPlan(dynamic data) {
-    // Parse your API response here
-    return _generateMockPlan();
+    try {
+      Map<String, List<Map<String, dynamic>>> parsedPlan = {};
+      
+      // Extract the mealPlan object
+      Map<String, dynamic> planData = data['mealPlan'] ?? data;
+      
+      // Parse each day
+      planData.forEach((day, meals) {
+        if (meals is List) {
+          parsedPlan[day] = meals.map((meal) {
+            if (meal is Map) {
+              return {
+                'meal': meal['meal']?.toString() ?? '',
+                'recipe': meal['recipe']?.toString() ?? '',
+                'calories': _parseCalories(meal['calories']),
+              };
+            }
+            return <String, dynamic>{};
+          }).toList();
+        }
+      });
+      
+      // Validate that we have data
+      if (parsedPlan.isEmpty) {
+        throw Exception('No meal plan data received from server');
+      }
+      
+      return parsedPlan;
+    } catch (e) {
+      throw Exception('Failed to parse meal plan: ${e.toString()}');
+    }
   }
 
-  Map<String, List<Map<String, dynamic>>> _generateMockPlan() {
-    return {
-      'Monday': [
-        {'meal': 'Breakfast', 'recipe': 'Oatmeal with Berries', 'calories': 350},
-        {'meal': 'Lunch', 'recipe': 'Grilled Chicken Salad', 'calories': 450},
-        {'meal': 'Dinner', 'recipe': 'Salmon with Vegetables', 'calories': 600},
-      ],
-      'Tuesday': [
-        {'meal': 'Breakfast', 'recipe': 'Greek Yogurt Parfait', 'calories': 300},
-        {'meal': 'Lunch', 'recipe': 'Turkey Wrap', 'calories': 400},
-        {'meal': 'Dinner', 'recipe': 'Stir Fry with Brown Rice', 'calories': 550},
-      ],
-      'Wednesday': [
-        {'meal': 'Breakfast', 'recipe': 'Scrambled Eggs & Toast', 'calories': 400},
-        {'meal': 'Lunch', 'recipe': 'Quinoa Bowl', 'calories': 450},
-        {'meal': 'Dinner', 'recipe': 'Baked Chicken Breast', 'calories': 500},
-      ],
-      'Thursday': [
-        {'meal': 'Breakfast', 'recipe': 'Smoothie Bowl', 'calories': 350},
-        {'meal': 'Lunch', 'recipe': 'Pasta Primavera', 'calories': 500},
-        {'meal': 'Dinner', 'recipe': 'Grilled Fish Tacos', 'calories': 550},
-      ],
-      'Friday': [
-        {'meal': 'Breakfast', 'recipe': 'Avocado Toast', 'calories': 380},
-        {'meal': 'Lunch', 'recipe': 'Caesar Salad', 'calories': 420},
-        {'meal': 'Dinner', 'recipe': 'Beef Stir Fry', 'calories': 600},
-      ],
-      'Saturday': [
-        {'meal': 'Breakfast', 'recipe': 'Pancakes with Fruit', 'calories': 450},
-        {'meal': 'Lunch', 'recipe': 'Veggie Burger', 'calories': 480},
-        {'meal': 'Dinner', 'recipe': 'Roasted Chicken', 'calories': 650},
-      ],
-      'Sunday': [
-        {'meal': 'Breakfast', 'recipe': 'French Toast', 'calories': 420},
-        {'meal': 'Lunch', 'recipe': 'Buddha Bowl', 'calories': 500},
-        {'meal': 'Dinner', 'recipe': 'Shrimp Pasta', 'calories': 580},
-      ],
-    };
+  int _parseCalories(dynamic calories) {
+    if (calories is int) return calories;
+    if (calories is double) return calories.toInt();
+    if (calories is String) {
+      String cleaned = calories.replaceAll(RegExp(r'[^0-9.]'), '');
+      return int.tryParse(cleaned.split('.')[0]) ?? 0;
+    }
+    return 0;
   }
 
   @override
@@ -167,9 +191,35 @@ class _WeeklyMealPlanScreenState extends State<WeeklyMealPlanScreen> {
           _buildGenerateButton(),
           const SizedBox(height: 10),
 
-          if (weeklyPlan == null)
+          if (errorMessage != null)
+            Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.red.withOpacity(0.30)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.error_outline, color: Colors.red.shade300, size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      errorMessage!,
+                      style: TextStyle(
+                        color: Colors.red.shade200,
+                        fontSize: 12.5,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          if (weeklyPlan == null && errorMessage == null)
             Text(
-              "Tip: Keep it simple. You can regenerate anytime.",
+              "Tip: Generation takes 30-60 seconds. Please be patient.",
               style: TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 12.5),
             ),
         ],
@@ -382,81 +432,116 @@ class _WeeklyMealPlanScreenState extends State<WeeklyMealPlanScreen> {
     );
   }
 
-  Widget _buildCalorieCard() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(22),
-        gradient: LinearGradient(
-          colors: [
-            Colors.white.withOpacity(0.06),
-            _panel.withOpacity(0.35),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+ Widget _buildCalorieCard() {
+  return Container(
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      borderRadius: BorderRadius.circular(22),
+      gradient: LinearGradient(
+        colors: [
+          Colors.white.withOpacity(0.06),
+          _panel.withOpacity(0.35),
+        ],
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+      ),
+      border: Border.all(color: Colors.white.withOpacity(0.10)),
+      boxShadow: [
+        BoxShadow(
+          color: _accent.withOpacity(0.10),
+          blurRadius: 22,
+          offset: const Offset(0, 14),
         ),
-        border: Border.all(color: Colors.white.withOpacity(0.10)),
-        boxShadow: [
-          BoxShadow(
-            color: _accent.withOpacity(0.10),
-            blurRadius: 22,
-            offset: const Offset(0, 14),
+      ],
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // ───────── Header ─────────
+        Row(
+          children: [
+            Text(
+              "Daily Target",
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.70),
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const Spacer(),
+            Text(
+              "${caloriesIntake.toInt()} cal",
+              style: const TextStyle(
+                color: _accent,
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 10),
+
+        // ───────── Slider + Disclaimer ─────────
+        SliderTheme(
+          data: SliderThemeData(
+            activeTrackColor: _accent,
+            inactiveTrackColor: Colors.white.withOpacity(0.12),
+            thumbColor: _accent,
+            overlayColor: _accent.withOpacity(0.20),
+            trackHeight: 4,
           ),
-        ],
-      ),
-      child: Column(
-        children: [
-          Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              Slider(
+                value: caloriesIntake,
+                min: 1200,
+                max: 4000,
+                divisions: 56,
+                onChanged: (value) {
+                  setState(() => caloriesIntake = value);
+                },
+              ),
+              const SizedBox(height: 6),
               Text(
-                "Daily Target",
+                "Meals may vary by ±100 calories",
                 style: TextStyle(
-                  color: Colors.white.withOpacity(0.70),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const Spacer(),
-              Text(
-                "${caloriesIntake.toInt()} cal",
-                style: const TextStyle(
-                  color: _accent,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
+                  color: Colors.white.withOpacity(0.55),
+                  fontSize: 12,
+                  fontStyle: FontStyle.italic,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          SliderTheme(
-            data: SliderThemeData(
-              activeTrackColor: _accent,
-              inactiveTrackColor: Colors.white.withOpacity(0.12),
-              thumbColor: _accent,
-              overlayColor: _accent.withOpacity(0.20),
-              trackHeight: 4,
+        ),
+
+        const SizedBox(height: 6),
+
+        // ───────── Range Labels ─────────
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              "1200",
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.45),
+                fontSize: 12,
+              ),
             ),
-            child: Slider(
-              value: caloriesIntake,
-              min: 1200,
-              max: 4000,
-              divisions: 56,
-              onChanged: (value) => setState(() => caloriesIntake = value),
+            Text(
+              "4000",
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.45),
+                fontSize: 12,
+              ),
             ),
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text("1200",
-                  style: TextStyle(color: Colors.white.withOpacity(0.45), fontSize: 12)),
-              Text("4000",
-                  style: TextStyle(color: Colors.white.withOpacity(0.45), fontSize: 12)),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
+          ],
+        ),
+      ],
+    ),
+  );
+}
 
   Widget _buildGenerateButton() {
     return SizedBox(
@@ -472,13 +557,23 @@ class _WeeklyMealPlanScreenState extends State<WeeklyMealPlanScreen> {
           elevation: 0,
         ),
         child: isGenerating
-            ? const SizedBox(
-                height: 20,
-                width: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                ),
+            ? Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Text(
+                    "Generating... (30-60s)",
+                    style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w900),
+                  ),
+                ],
               )
             : const Text(
                 "Generate Weekly Plan",
@@ -646,11 +741,51 @@ class _WeeklyMealPlanScreenState extends State<WeeklyMealPlanScreen> {
   }
 
   Widget _buildMealRow(Map<String, dynamic> meal) {
-    final mealType = (meal['meal'] ?? '').toString();
-    final recipeName = (meal['recipe'] ?? '').toString();
-    final cal = (meal['calories'] is int) ? meal['calories'] as int : int.tryParse("${meal['calories']}") ?? 0;
+  final mealType = (meal['meal'] ?? '').toString();
+  final recipeName = (meal['recipe'] ?? '').toString();
+  final cal = (meal['calories'] is int)
+      ? meal['calories'] as int
+      : int.tryParse("${meal['calories']}") ?? 0;
 
-    return Padding(
+  return InkWell(
+    borderRadius: BorderRadius.circular(18),
+    onTap: () async {
+      if (recipeName.isEmpty) return;
+
+      // 🔥 SHOW LOADER
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+
+      // 🔥 FETCH FULL RECIPE USING YOUR API
+      final recipe = await RecipeService.getRecipe(recipeName);
+
+      Navigator.pop(context); // remove loader
+
+      if (recipe == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Failed to load recipe")),
+        );
+        return;
+      }
+
+      // ✅ NAVIGATE WITH initialRecipe
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => RecipeScreen(
+            savedRecipes: const [],
+            initialRecipe: recipe,
+            isVoiceActivated: false,
+          ),
+        ),
+      );
+    },
+    child: Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       child: Row(
         children: [
@@ -664,6 +799,7 @@ class _WeeklyMealPlanScreenState extends State<WeeklyMealPlanScreen> {
             child: Icon(_getMealIcon(mealType), size: 20, color: _accent),
           ),
           const SizedBox(width: 12),
+
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -690,6 +826,7 @@ class _WeeklyMealPlanScreenState extends State<WeeklyMealPlanScreen> {
               ],
             ),
           ),
+
           Text(
             "$cal cal",
             style: TextStyle(
@@ -700,23 +837,12 @@ class _WeeklyMealPlanScreenState extends State<WeeklyMealPlanScreen> {
           ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 
-  IconData _getMealIcon(String meal) {
-    switch (meal) {
-      case 'Breakfast':
-        return Icons.free_breakfast_rounded;
-      case 'Lunch':
-        return Icons.lunch_dining_rounded;
-      case 'Dinner':
-        return Icons.restaurant_rounded;
-      default:
-        return Icons.fastfood_rounded;
-    }
-  }
 
-  // ---------------- BACKGROUND ----------------
+  // ---------------- BACKGROUND & HELPER WIDGETS ----------------
 
   Widget _bgGradient() {
     return Container(
@@ -731,26 +857,51 @@ class _WeeklyMealPlanScreenState extends State<WeeklyMealPlanScreen> {
   }
 
   Widget _bgStars() {
-    return IgnorePointer(
-      child: Stack(
-        children: [
-          Positioned(
-            left: 24,
-            top: 90,
-            child: Icon(Icons.auto_awesome, color: Colors.white.withOpacity(0.05), size: 30),
-          ),
-          Positioned(
-            right: 18,
-            top: 150,
-            child: Icon(Icons.auto_awesome, color: Colors.white.withOpacity(0.04), size: 36),
-          ),
-          Positioned(
-            right: 50,
-            top: 360,
-            child: Icon(Icons.auto_awesome, color: Colors.white.withOpacity(0.04), size: 28),
-          ),
-        ],
+    return Positioned.fill(
+      child: CustomPaint(
+        painter: StarsPainter(),
       ),
     );
   }
+
+  IconData _getMealIcon(String mealType) {
+    final lower = mealType.toLowerCase();
+    if (lower.contains('breakfast')) return Icons.wb_sunny_rounded;
+    if (lower.contains('lunch')) return Icons.wb_twilight_rounded;
+    if (lower.contains('dinner')) return Icons.nights_stay_rounded;
+    if (lower.contains('snack')) return Icons.cookie_rounded;
+    return Icons.restaurant_rounded;
+  }
+}
+
+// ---------------- STARS PAINTER ----------------
+
+class StarsPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = Colors.white.withOpacity(0.15);
+    
+    // Draw random stars
+    final stars = [
+      Offset(size.width * 0.1, size.height * 0.15),
+      Offset(size.width * 0.3, size.height * 0.08),
+      Offset(size.width * 0.7, size.height * 0.12),
+      Offset(size.width * 0.85, size.height * 0.20),
+      Offset(size.width * 0.15, size.height * 0.35),
+      Offset(size.width * 0.6, size.height * 0.28),
+      Offset(size.width * 0.9, size.height * 0.45),
+      Offset(size.width * 0.25, size.height * 0.55),
+      Offset(size.width * 0.75, size.height * 0.60),
+      Offset(size.width * 0.4, size.height * 0.75),
+      Offset(size.width * 0.8, size.height * 0.80),
+      Offset(size.width * 0.2, size.height * 0.85),
+    ];
+
+    for (final star in stars) {
+      canvas.drawCircle(star, 1.5, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

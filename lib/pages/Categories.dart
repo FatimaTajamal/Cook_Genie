@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'RecipeSearch.dart'; // RecipeService (Gemini + caching)
+import 'RecipeSearch.dart'; // RecipeService
 import 'RecipeScreen.dart'; // detail page
 
 class CategoryRecipeScreen extends StatefulWidget {
@@ -8,111 +8,117 @@ class CategoryRecipeScreen extends StatefulWidget {
   const CategoryRecipeScreen({super.key, required this.category});
 
   @override
-  _CategoryRecipeScreenState createState() => _CategoryRecipeScreenState();
+  State<CategoryRecipeScreen> createState() => _CategoryRecipeScreenState();
 }
 
 class _CategoryRecipeScreenState extends State<CategoryRecipeScreen> {
-  List<String> _allSuggestions = [];
+  static const int _pageSize = 3;
+
+  // Pagination state
+  int _page = 1;
+  bool _hasMore = true;
+  bool _loadingMore = false;
+
+  // Data
   List<Map<String, dynamic>> categoryRecipes = [];
   List<Map<String, dynamic>> filteredRecipes = [];
 
-  static const int _pageSize = 3;
-  int _loadedCount = 0;
+  // UI state
   bool isLoading = true;
-  bool _loadingMore = false;
   String _searchQuery = '';
 
-  // --- THEME CONSTANTS (match your other screens) ---
+  // --- THEME CONSTANTS ---
   static const Color _bgTop = Color(0xFF0B0615);
   static const Color _bgMid = Color(0xFF130A26);
   static const Color _bgBottom = Color(0xFF1C0B33);
   static const Color _accent = Color(0xFFB57BFF);
   static const Color _accent2 = Color(0xFF7E3FF2);
 
+  String get _normalizedCategory => widget.category.trim().toLowerCase();
+
   @override
   void initState() {
     super.initState();
-    fetchCategorySuggestionsAndFirstPage();
+    _fetchFirstPage();
   }
 
- Future<void> fetchCategorySuggestionsAndFirstPage() async {
-  try {
-    final recipes = await RecipeService.getCategoryRecipes(
-      category: widget.category,
-    );
-
+  Future<void> _fetchFirstPage() async {
     setState(() {
-      categoryRecipes = recipes;
-      filteredRecipes = recipes;
-      isLoading = false;
+      isLoading = true;
+      _page = 1;
+      _hasMore = true;
+      _loadingMore = false;
+      categoryRecipes = [];
+      filteredRecipes = [];
     });
-  } catch (e) {
-    debugPrint("❌ Error fetching category recipes: $e");
-    setState(() {
-      isLoading = false;
-    });
-  }
-}
-
-
-  Future<void> _loadNextPage({bool initial = false}) async {
-    if (_loadingMore) return;
-    if (_loadedCount >= _allSuggestions.length) {
-      if (mounted) setState(() => isLoading = false);
-      return;
-    }
-
-    if (mounted) {
-      setState(() {
-        if (initial) {
-          isLoading = true;
-        } else {
-          _loadingMore = true;
-        }
-      });
-    }
-
-    final int nextEnd =
-        (_loadedCount + _pageSize) > _allSuggestions.length
-            ? _allSuggestions.length
-            : _loadedCount + _pageSize;
-
-    final List<String> slice = _allSuggestions.sublist(_loadedCount, nextEnd);
 
     try {
-      final List<Map<String, dynamic>> nextRecipes =
-          await RecipeService.getMultipleRecipes(slice);
+      final recipes = await RecipeService.getCategoryRecipes(
+        category: _normalizedCategory,
+        page: _page,
+        limit: _pageSize,
+      );
+
+      // If backend returns less than pageSize => no more pages
+      final bool hasMore = recipes.length == _pageSize;
+
+      setState(() {
+        categoryRecipes = recipes;
+        _applyFilter(_searchQuery);
+        _hasMore = hasMore;
+        isLoading = false;
+      });
+    } catch (e) {
+      debugPrint("❌ Error fetching category recipes: $e");
+      setState(() => isLoading = false);
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_loadingMore || !_hasMore) return;
+
+    setState(() => _loadingMore = true);
+
+    try {
+      final nextPage = _page + 1;
+
+      final more = await RecipeService.getCategoryRecipes(
+        category: _normalizedCategory,
+        page: nextPage,
+        limit: _pageSize,
+      );
+
+      final bool hasMore = more.length == _pageSize;
 
       if (!mounted) return;
 
       setState(() {
-        categoryRecipes.addAll(nextRecipes);
+        _page = nextPage;
+        categoryRecipes.addAll(more);
         _applyFilter(_searchQuery);
-        _loadedCount = nextEnd;
-        isLoading = false;
+        _hasMore = hasMore;
         _loadingMore = false;
       });
     } catch (e) {
-      debugPrint('❌ Error loading next page: $e');
+      debugPrint("❌ Error loading more recipes: $e");
       if (!mounted) return;
-      setState(() {
-        isLoading = false;
-        _loadingMore = false;
-      });
+      setState(() => _loadingMore = false);
     }
   }
 
   void _applyFilter(String query) {
     _searchQuery = query;
+
     if (query.trim().isEmpty) {
       filteredRecipes = List<Map<String, dynamic>>.from(categoryRecipes);
-    } else {
-      final lower = query.trim().toLowerCase();
-      filteredRecipes = categoryRecipes.where((recipe) {
-        final title = (recipe['name'] ?? '').toString().toLowerCase();
-        return title.contains(lower);
-      }).toList();
+      return;
     }
+
+    final lower = query.trim().toLowerCase();
+    filteredRecipes = categoryRecipes.where((recipe) {
+      final title = (recipe['name'] ?? '').toString().toLowerCase();
+      return title.contains(lower);
+    }).toList();
   }
 
   void filterSearch(String query) {
@@ -133,19 +139,7 @@ class _CategoryRecipeScreenState extends State<CategoryRecipeScreen> {
     );
   }
 
-  // ---------- THEMED UI ----------
-  void _showSnack(String msg) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        backgroundColor: const Color(0xFF2A1246),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      ),
-    );
-  }
-
+  // ---------- UI HELPERS ----------
   Widget _bgGradient() {
     return Container(
       decoration: const BoxDecoration(
@@ -210,7 +204,7 @@ class _CategoryRecipeScreenState extends State<CategoryRecipeScreen> {
             ),
             const SizedBox(height: 6),
             Text(
-              "Search inside what you've loaded, or keep loading more suggestions.",
+              "Loads 3 at a time — tap Load more to fetch more.",
               style: TextStyle(
                 color: Colors.white.withOpacity(0.65),
                 fontSize: 13.5,
@@ -325,7 +319,8 @@ class _CategoryRecipeScreenState extends State<CategoryRecipeScreen> {
 
           final ingredientsText = (recipe['ingredients'] is List)
               ? ((recipe['ingredients'] as List)
-                      .map((i) => (i is Map ? i['name'] : null)?.toString() ?? '')
+                      .map((i) =>
+                          (i is Map ? i['name'] : null)?.toString() ?? '')
                       .where((s) => s.trim().isNotEmpty)
                       .take(6)
                       .join(', '))
@@ -432,8 +427,9 @@ class _CategoryRecipeScreenState extends State<CategoryRecipeScreen> {
   }
 
   Widget _buildLoadMore() {
-    final bool hasMore = _loadedCount < _allSuggestions.length;
-    final bool show = _searchQuery.trim().isEmpty && hasMore;
+    // Only show Load More if NOT searching and backend says there's more
+    final bool show = _searchQuery.trim().isEmpty && _hasMore;
+
     if (!show) return const SizedBox.shrink();
 
     return Padding(
@@ -442,13 +438,14 @@ class _CategoryRecipeScreenState extends State<CategoryRecipeScreen> {
         width: double.infinity,
         height: 50,
         child: ElevatedButton(
-          onPressed: _loadingMore ? null : () => _loadNextPage(),
+          onPressed: _loadingMore ? null : _loadMore,
           style: ElevatedButton.styleFrom(
             backgroundColor: _accent,
             foregroundColor: Colors.white,
             disabledBackgroundColor: _accent.withOpacity(0.35),
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
             elevation: 0,
           ),
           child: _loadingMore
@@ -462,7 +459,10 @@ class _CategoryRecipeScreenState extends State<CategoryRecipeScreen> {
                 )
               : const Text(
                   "Load more",
-                  style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 0.2),
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.2,
+                  ),
                 ),
         ),
       ),
@@ -492,7 +492,7 @@ class _CategoryRecipeScreenState extends State<CategoryRecipeScreen> {
                   child: _emptyState(
                     icon: Icons.search_rounded,
                     title: "No match found",
-                    subtitle: "Try a different keyword or load more recipes.",
+                    subtitle: "Try a different keyword, or clear search.",
                   ),
                 )
               else if (filteredRecipes.isEmpty && categoryRecipes.isEmpty)
@@ -501,7 +501,7 @@ class _CategoryRecipeScreenState extends State<CategoryRecipeScreen> {
                     icon: Icons.restaurant_menu_rounded,
                     title: "No recipes found",
                     subtitle:
-                        "Try loading again, or check your connection and preferences.",
+                        "Try again, or check your connection and preferences.",
                   ),
                 )
               else
@@ -518,7 +518,7 @@ class _CategoryRecipeScreenState extends State<CategoryRecipeScreen> {
         elevation: 0,
         centerTitle: true,
         title: Text(
-          "${widget.category}",
+          widget.category,
           style: const TextStyle(fontWeight: FontWeight.w900),
         ),
         foregroundColor: Colors.white,

@@ -5,27 +5,41 @@ import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+/// ✅ PAGINATED CATEGORY RESPONSE (used for Load More)
+class CategoryRecipesResponse {
+  final List<Map<String, dynamic>> recipes;
+  final bool hasMore;
+  final int currentPage;
+  final int totalCount;
+
+  CategoryRecipesResponse({
+    required this.recipes,
+    required this.hasMore,
+    required this.currentPage,
+    required this.totalCount,
+  });
+}
+
 class RecipeService {
   // 🔥 REPLACE WITH YOUR VERCEL URL
   static const String backendUrl = "https://database-six-kappa.vercel.app";
 
   final FlutterTts flutterTts = FlutterTts();
-  
+
   final stt.SpeechToText _speech = stt.SpeechToText();
   bool _isListening = false;
 
   static final Map<String, Map<String, dynamic>> _recipeCache = {};
 
-  // 🔥 FIRESTORE HELPER: Get Dietary Preferences
+  // -------------------- FIRESTORE HELPERS --------------------
+
   static Future<List<String>> _getDietaryPreferences() async {
     try {
       final userId = FirebaseAuth.instance.currentUser?.uid;
       if (userId == null) return [];
 
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(userId)
-          .get();
+      final doc =
+          await FirebaseFirestore.instance.collection('users').doc(userId).get();
 
       if (doc.exists && doc.data() != null) {
         return List<String>.from(doc.data()!['dietaryPreferences'] ?? []);
@@ -36,16 +50,13 @@ class RecipeService {
     return [];
   }
 
-  // 🔥 FIRESTORE HELPER: Get Allergies
   static Future<List<String>> _getAllergies() async {
     try {
       final userId = FirebaseAuth.instance.currentUser?.uid;
       if (userId == null) return [];
 
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(userId)
-          .get();
+      final doc =
+          await FirebaseFirestore.instance.collection('users').doc(userId).get();
 
       if (doc.exists && doc.data() != null) {
         return List<String>.from(doc.data()!['allergies'] ?? []);
@@ -56,15 +67,13 @@ class RecipeService {
     return [];
   }
 
-    static Future<List<String>> _getAvailableIngredients() async {
+  static Future<List<String>> _getAvailableIngredients() async {
     try {
       final userId = FirebaseAuth.instance.currentUser?.uid;
       if (userId == null) return [];
 
-      final doc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(userId)
-          .get();
+      final doc =
+          await FirebaseFirestore.instance.collection('users').doc(userId).get();
 
       if (doc.exists && doc.data() != null) {
         return List<String>.from(doc.data()!['availableIngredients'] ?? []);
@@ -75,9 +84,8 @@ class RecipeService {
     return [];
   }
 
+  // -------------------- VOICE SEARCH --------------------
 
-
-  // 🎤 VOICE SEARCH
   Future<void> listenAndSearch(
     Function(String) onQueryRecognized,
     Function(bool) onListeningStateChanged,
@@ -86,7 +94,7 @@ class RecipeService {
 
     if (_speech.isListening) {
       await _speech.stop();
-      await Future.delayed(Duration(milliseconds: 200));
+      await Future.delayed(const Duration(milliseconds: 200));
     }
 
     bool available = await _speech.initialize();
@@ -97,7 +105,7 @@ class RecipeService {
       _speech.listen(
         onResult: (result) async {
           if (result.finalResult) {
-            String spokenText = result.recognizedWords.trim();
+            final spokenText = result.recognizedWords.trim();
             if (spokenText.isNotEmpty) {
               _isListening = false;
               await _speech.stop();
@@ -119,14 +127,15 @@ class RecipeService {
     await flutterTts.speak(text);
   }
 
-  // 🔎 RECIPE FETCH (calls your backend)
+  // -------------------- RECIPE FETCH --------------------
+
   static Future<Map<String, dynamic>?> getRecipe(
     String query, {
     Function(String)? onError,
   }) async {
     final List<String> preferences = await _getDietaryPreferences();
     final List<String> allergies = await _getAllergies();
-    
+
     final String preferenceKey = preferences.join(",").toLowerCase();
     final String cacheKey = "$query|$preferenceKey";
 
@@ -147,15 +156,14 @@ class RecipeService {
         headers: {"Content-Type": "application/json"},
         body: jsonEncode(requestData),
       );
-      
-      print("🔹 Backend Status Code: ${response.statusCode}");
 
       if (response.statusCode == 200) {
         final recipe = jsonDecode(response.body);
-        _recipeCache[cacheKey] = recipe;
-        return recipe;
+        _recipeCache[cacheKey] = Map<String, dynamic>.from(recipe);
+        return _recipeCache[cacheKey];
       } else {
-        onError?.call("Failed to fetch recipe. Status Code: ${response.statusCode}");
+        onError?.call(
+            "Failed to fetch recipe. Status Code: ${response.statusCode}");
         return null;
       }
     } catch (e) {
@@ -164,7 +172,8 @@ class RecipeService {
     }
   }
 
-  // 🔎 FETCH RECIPES BY INGREDIENTS
+  // -------------------- BY INGREDIENTS --------------------
+
   static Future<List<Map<String, dynamic>>> getRecipesByIngredients(
     List<String> ingredients, {
     Function(String)? onError,
@@ -187,16 +196,19 @@ class RecipeService {
 
       if (response.statusCode == 200) {
         final List<dynamic> data = jsonDecode(response.body);
-        List<Map<String, dynamic>> recipes = 
-            data.map((item) => Map<String, dynamic>.from(item)).toList();
-        
-        for (var recipe in recipes) {
-          _recipeCache[recipe["name"]] = recipe;
+        final recipes = data
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList();
+
+        for (final recipe in recipes) {
+          final name = (recipe["name"] ?? "").toString();
+          if (name.isNotEmpty) _recipeCache[name] = recipe;
         }
-        
+
         return recipes;
       } else {
-        onError?.call("Failed to fetch recipes. Status Code: ${response.statusCode}");
+        onError?.call(
+            "Failed to fetch recipes. Status Code: ${response.statusCode}");
         return [];
       }
     } catch (e) {
@@ -205,64 +217,98 @@ class RecipeService {
     }
   }
 
- // 📋 GET FULL RECIPES BY CATEGORY
-// 📋 GET FULL RECIPES BY CATEGORY
-static Future<List<Map<String, dynamic>>> getCategoryRecipes({
-  required String category,
-  int page = 1,
-  int limit = 10,
-}) async {
-  final List<String> preferences = await _getDietaryPreferences();
-  final List<String> allergies = await _getAllergies();
+  // -------------------- CATEGORY (PAGINATED for Load More) --------------------
+  // ✅ This is the function your CategoryRecipeScreen should call.
+  // ✅ Default limit = 3 (so it loads only 3 initially).
+  static Future<CategoryRecipesResponse> getCategoryRecipesPaged({
+    required String category,
+    int page = 1,
+    int limit = 3,
+  }) async {
+    final List<String> preferences = await _getDietaryPreferences();
+    final List<String> allergies = await _getAllergies();
 
-  final Map<String, dynamic> requestData = {
-    "category": category,
-    "dietaryPreferences": preferences,
-    "allergies": allergies,
-    "page": page,
-    "limit": limit,
-  };
+    final Map<String, dynamic> requestData = {
+      "category": category,
+      "dietaryPreferences": preferences,
+      "allergies": allergies,
+      "page": page,
+      "limit": limit,
+    };
 
-  try {
-    final response = await http.post(
-      Uri.parse("$backendUrl/suggestions-by-category"),
-      headers: {"Content-Type": "application/json"},
-      body: jsonEncode(requestData),
-    );
+    try {
+      final response = await http.post(
+        Uri.parse("$backendUrl/suggestions-by-category"),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode(requestData),
+      );
 
-    print("📋 Category status: ${response.statusCode}");
-    print("📋 Category body: ${response.body}");
+      print("📋 Category status: ${response.statusCode}");
+      // print("📋 Category body: ${response.body}"); // uncomment if debugging
 
-    if (response.statusCode == 200) {
-      final decoded = jsonDecode(response.body);
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
 
-      // ✅ FIXED: Extract recipes from the nested structure
-      final List<dynamic> recipes = decoded['recipes'] ?? [];
-      
-      // Optional: Handle pagination info if needed
-      final pagination = decoded['pagination'];
-      if (pagination != null) {
-        print("📄 Pagination: Page ${pagination['currentPage']}, Total: ${pagination['totalCount']}, HasMore: ${pagination['hasMore']}");
+        // ✅ Your backend returns: { recipes: [...], pagination: {...} }
+        final List<dynamic> recipesRaw = decoded['recipes'] ?? [];
+        final Map<String, dynamic> pagination =
+            Map<String, dynamic>.from(decoded['pagination'] ?? {});
+
+        final recipes = recipesRaw
+            .map<Map<String, dynamic>>((r) => Map<String, dynamic>.from(r))
+            .toList();
+
+        final bool hasMore = (pagination['hasMore'] ?? false) == true;
+        final int currentPage = (pagination['currentPage'] ?? page) as int;
+        final int totalCount = (pagination['totalCount'] ?? 0) as int;
+
+        // Optional caching by name
+        for (final recipe in recipes) {
+          final name = (recipe["name"] ?? "").toString();
+          if (name.isNotEmpty) _recipeCache[name] = recipe;
+        }
+
+        return CategoryRecipesResponse(
+          recipes: recipes,
+          hasMore: hasMore,
+          currentPage: currentPage,
+          totalCount: totalCount,
+        );
+      } else {
+        print(
+            "❌ Failed to fetch category recipes. Status: ${response.statusCode}");
+        print("❌ Response: ${response.body}");
       }
-
-      // Convert to List<Map<String, dynamic>>
-      return recipes
-          .map<Map<String, dynamic>>(
-              (r) => Map<String, dynamic>.from(r))
-          .toList();
-    } else {
-      print("❌ Failed to fetch category recipes. Status: ${response.statusCode}");
-      print("❌ Response: ${response.body}");
+    } catch (e) {
+      print("❌ Category fetch error: $e");
     }
-  } catch (e) {
-    print("❌ Category fetch error: $e");
+
+    return CategoryRecipesResponse(
+      recipes: [],
+      hasMore: false,
+      currentPage: page,
+      totalCount: 0,
+    );
   }
 
-  return [];
-}
+  /// ✅ Backward-compatible method (so your old UI code keeps working)
+  /// Loads recipes by category with pagination.
+  /// Default limit = 3 so you get 3 initially.
+  static Future<List<Map<String, dynamic>>> getCategoryRecipes({
+    required String category,
+    int page = 1,
+    int limit = 3,
+  }) async {
+    final res = await getCategoryRecipesPaged(
+      category: category,
+      page: page,
+      limit: limit,
+    );
+    return res.recipes;
+  }
 
+  // -------------------- SUGGESTIONS (VOICE) --------------------
 
-  // 💡 RECIPE SUGGESTIONS (for voice search)
   static Future<List<String>> getRecipeSuggestions(String query) async {
     final List<String> preferences = await _getDietaryPreferences();
 
@@ -290,7 +336,8 @@ static Future<List<Map<String, dynamic>>> getCategoryRecipes({
     }
   }
 
-  // 🔄 GET MULTIPLE RECIPES
+  // -------------------- MULTIPLE RECIPES --------------------
+
   static Future<List<Map<String, dynamic>>> getMultipleRecipes(
     List<String> recipeNames,
   ) async {
