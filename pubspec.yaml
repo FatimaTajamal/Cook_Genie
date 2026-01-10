@@ -87,8 +87,22 @@ flutter:
     - lib/assets/terms_and_conditions.txt
     - lib/images/genie.png
     - lib/images/genie1.png
-    
+    - lib/assets/fonts/
 
+  fonts:
+    - family: Cinzel
+      fonts:
+        - asset: lib/assets/fonts/Cinzel-Bold.ttf
+          weight: 700
+        - asset: lib/assets/fonts/Cinzel-Black.ttf
+          weight: 900
+
+    - family: Poppins
+      fonts:
+        - asset: lib/assets/fonts/Poppins-Regular.ttf
+          weight: 400
+        - asset: lib/assets/fonts/Poppins-Medium.ttf
+          weight: 500
 
 
   # An image asset can refer to one or more resolution-specific "variants", see

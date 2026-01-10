@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
-
 import 'home_screen.dart';
 import 'grocery_list_screen.dart';
 import 'profile_settings_screen.dart';
@@ -72,7 +71,9 @@ class _MainScreenState extends State<MainScreen> {
     final String? recipesJson = prefs.getString('saved_recipes');
     if (recipesJson != null) {
       setState(() {
-        savedRecipes = List<Map<String, dynamic>>.from(json.decode(recipesJson));
+        savedRecipes = List<Map<String, dynamic>>.from(
+          json.decode(recipesJson),
+        );
         _buildScreens();
       });
     }
@@ -92,10 +93,7 @@ class _MainScreenState extends State<MainScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _bgTop,
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _screens,
-      ),
+      body: IndexedStack(index: _currentIndex, children: _screens),
       bottomNavigationBar: _CookGenieBottomNav(
         currentIndex: _currentIndex,
         onTap: (i) => setState(() => _currentIndex = i),
@@ -108,10 +106,7 @@ class _CookGenieBottomNav extends StatelessWidget {
   final int currentIndex;
   final ValueChanged<int> onTap;
 
-  const _CookGenieBottomNav({
-    required this.currentIndex,
-    required this.onTap,
-  });
+  const _CookGenieBottomNav({required this.currentIndex, required this.onTap});
 
   static const Color _navBg = Color(0xFF120A22);
   static const Color _accent = Color(0xFFB57BFF);
@@ -218,28 +213,31 @@ class _NavItem extends StatelessWidget {
           margin: const EdgeInsets.symmetric(horizontal: 6),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
-            gradient: selected
-                ? LinearGradient(
-                    colors: [
-                      _accent.withOpacity(0.26),
-                      Colors.white.withOpacity(0.06),
-                    ],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  )
-                : null,
-            border: selected
-                ? Border.all(color: Colors.white.withOpacity(0.12))
-                : null,
-            boxShadow: selected
-                ? [
-                    BoxShadow(
-                      color: _accent.withOpacity(0.18),
-                      blurRadius: 18,
-                      offset: const Offset(0, 8),
-                    ),
-                  ]
-                : [],
+            gradient:
+                selected
+                    ? LinearGradient(
+                      colors: [
+                        _accent.withOpacity(0.26),
+                        Colors.white.withOpacity(0.06),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    )
+                    : null,
+            border:
+                selected
+                    ? Border.all(color: Colors.white.withOpacity(0.12))
+                    : null,
+            boxShadow:
+                selected
+                    ? [
+                      BoxShadow(
+                        color: _accent.withOpacity(0.18),
+                        blurRadius: 18,
+                        offset: const Offset(0, 8),
+                      ),
+                    ]
+                    : [],
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,

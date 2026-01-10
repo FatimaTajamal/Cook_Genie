@@ -49,12 +49,8 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     'Kosher',
   ];
   final List<String> _genderOptions = ['Male', 'Female', 'Other'];
-  final List<String> _languageOptions = ['English', 'Spanish', 'French'];
-  final Map<String, String> _languageCodes = {
-    'English': 'en-US',
-    'Spanish': 'es-ES',
-    'French': 'fr-FR',
-  };
+  final List<String> _languageOptions = ['English'];
+  final Map<String, String> _languageCodes = {'English': 'en-US'};
 
   // Theme constants (match your other screens)
   static const Color _bgTop = Color(0xFF0B0615);
@@ -88,8 +84,9 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
           _selectedGender = null;
         }
 
-        _selectedDietaryPreferences =
-            List<String>.from(firestoreData['dietaryPreferences'] ?? []);
+        _selectedDietaryPreferences = List<String>.from(
+          firestoreData['dietaryPreferences'] ?? [],
+        );
 
         _ingredientsController.text =
             (firestoreData['availableIngredients'] as List?)?.join(', ') ?? '';
@@ -125,19 +122,21 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _isLoading = true);
 
-    final ingredients = _ingredientsController.text
-        .split(',')
-        .map((e) => e.trim())
-        .where((e) => e.isNotEmpty)
-        .toSet()
-        .toList();
+    final ingredients =
+        _ingredientsController.text
+            .split(',')
+            .map((e) => e.trim())
+            .where((e) => e.isNotEmpty)
+            .toSet()
+            .toList();
 
-    final allergies = _allergiesController.text
-        .split(',')
-        .map((e) => e.trim())
-        .where((e) => e.isNotEmpty)
-        .toSet()
-        .toList();
+    final allergies =
+        _allergiesController.text
+            .split(',')
+            .map((e) => e.trim())
+            .where((e) => e.isNotEmpty)
+            .toSet()
+            .toList();
 
     try {
       await _userService.saveUserPreferences(
@@ -209,145 +208,168 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     if (!mounted) return;
     await showDialog(
       context: context,
-      builder: (_) => _ThemedDialog(
-        title: "Terms & Conditions",
-        child: SizedBox(
-          height: 320,
-          child: SingleChildScrollView(
-            child: Text(
-              termsText,
-              style: TextStyle(color: Colors.white.withOpacity(0.75), height: 1.3),
+      builder:
+          (_) => _ThemedDialog(
+            title: "Terms & Conditions",
+            child: SizedBox(
+              height: 320,
+              child: SingleChildScrollView(
+                child: Text(
+                  termsText,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.75),
+                    height: 1.3,
+                  ),
+                ),
+              ),
             ),
+            actions: [
+              _dialogButton(text: "Close", onTap: () => Navigator.pop(context)),
+            ],
           ),
-        ),
-        actions: [
-          _dialogButton(text: "Close", onTap: () => Navigator.pop(context)),
-        ],
-      ),
     );
   }
 
   Future<void> _showVoiceAssistantDialog() async {
     await showDialog(
       context: context,
-      builder: (_) => _ThemedDialog(
-        title: "AI Voice Assistant",
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                "Language",
-                style: TextStyle(color: Colors.white.withOpacity(0.85), fontWeight: FontWeight.w700),
-              ),
+      builder:
+          (_) => _ThemedDialog(
+            title: "AI Voice Assistant",
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    "Language",
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.85),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white.withOpacity(0.14)),
+                    color: Colors.white.withOpacity(0.06),
+                  ),
+                  child: DropdownButton<String>(
+                    value: _selectedLanguage,
+                    dropdownColor: _cardBase,
+                    underline: const SizedBox.shrink(),
+                    iconEnabledColor: Colors.white.withOpacity(0.8),
+                    style: const TextStyle(color: Colors.white),
+                    items:
+                        _languageOptions
+                            .map(
+                              (v) => DropdownMenuItem(value: v, child: Text(v)),
+                            )
+                            .toList(),
+                    onChanged: (value) async {
+                      if (value == null) return;
+                      setState(() => _selectedLanguage = value);
+                      await _saveProfileAndSettings();
+                      if (mounted) _snack("Language set to $value");
+                    },
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(width: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.white.withOpacity(0.14)),
-                color: Colors.white.withOpacity(0.06),
-              ),
-              child: DropdownButton<String>(
-                value: _selectedLanguage,
-                dropdownColor: _cardBase,
-                underline: const SizedBox.shrink(),
-                iconEnabledColor: Colors.white.withOpacity(0.8),
-                style: const TextStyle(color: Colors.white),
-                items: _languageOptions
-                    .map((v) => DropdownMenuItem(value: v, child: Text(v)))
-                    .toList(),
-                onChanged: (value) async {
-                  if (value == null) return;
-                  setState(() => _selectedLanguage = value);
-                  await _saveProfileAndSettings();
-                  if (mounted) _snack("Language set to $value");
-                },
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          _dialogButton(text: "Close", onTap: () => Navigator.pop(context)),
-        ],
-      ),
+            actions: [
+              _dialogButton(text: "Close", onTap: () => Navigator.pop(context)),
+            ],
+          ),
     );
   }
 
   Future<void> _showPrivacyDialog() async {
     await showDialog(
       context: context,
-      builder: (_) => _ThemedDialog(
-        title: "Privacy & Security",
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _actionTile(
-              icon: Icons.description_rounded,
-              title: "Terms & Conditions",
-              onTap: () {
-                Navigator.pop(context);
-                _showTermsDialog();
-              },
+      builder:
+          (_) => _ThemedDialog(
+            title: "Privacy & Security",
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _actionTile(
+                  icon: Icons.description_rounded,
+                  title: "Terms & Conditions",
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showTermsDialog();
+                  },
+                ),
+                const SizedBox(height: 10),
+                _actionTile(
+                  icon: Icons.delete_sweep_rounded,
+                  title: "Clear All Data",
+                  destructive: true,
+                  onTap: () {
+                    Navigator.pop(context);
+                    _clearData();
+                  },
+                ),
+                const SizedBox(height: 10),
+                _actionTile(
+                  icon: Icons.person_off_rounded,
+                  title: "Delete Account",
+                  destructive: true,
+                  onTap: () {
+                    Navigator.pop(context);
+                    _deleteAccount();
+                  },
+                ),
+              ],
             ),
-            const SizedBox(height: 10),
-            _actionTile(
-              icon: Icons.delete_sweep_rounded,
-              title: "Clear All Data",
-              destructive: true,
-              onTap: () {
-                Navigator.pop(context);
-                _clearData();
-              },
-            ),
-            const SizedBox(height: 10),
-            _actionTile(
-              icon: Icons.person_off_rounded,
-              title: "Delete Account",
-              destructive: true,
-              onTap: () {
-                Navigator.pop(context);
-                _deleteAccount();
-              },
-            ),
-          ],
-        ),
-        actions: [
-          _dialogButton(text: "Close", onTap: () => Navigator.pop(context)),
-        ],
-      ),
+            actions: [
+              _dialogButton(text: "Close", onTap: () => Navigator.pop(context)),
+            ],
+          ),
     );
   }
 
   Future<void> _showAboutDialog() async {
     await showDialog(
       context: context,
-      builder: (_) => _ThemedDialog(
-        title: "About",
-        child: Text(
-          "CookGenie v1.0\nPowered by AI Cooking Intelligence",
-          style: TextStyle(color: Colors.white.withOpacity(0.78), height: 1.3),
-        ),
-        actions: [
-          _dialogButton(text: "Close", onTap: () => Navigator.pop(context)),
-        ],
-      ),
+      builder:
+          (_) => _ThemedDialog(
+            title: "About",
+            child: Text(
+              "CookGenie v1.0\nPowered by AI Cooking Intelligence",
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.78),
+                height: 1.3,
+              ),
+            ),
+            actions: [
+              _dialogButton(text: "Close", onTap: () => Navigator.pop(context)),
+            ],
+          ),
     );
   }
 
   Future<void> _showHelpDialog() async {
     await showDialog(
       context: context,
-      builder: (_) => _ThemedDialog(
-        title: "Help & Support",
-        child: Text(
-          "Contact support@cookgenie.com for assistance.",
-          style: TextStyle(color: Colors.white.withOpacity(0.78), height: 1.3),
-        ),
-        actions: [
-          _dialogButton(text: "Close", onTap: () => Navigator.pop(context)),
-        ],
-      ),
+      builder:
+          (_) => _ThemedDialog(
+            title: "Help & Support",
+            child: Text(
+              "Contact support@cookgenie.com for assistance.",
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.78),
+                height: 1.3,
+              ),
+            ),
+            actions: [
+              _dialogButton(text: "Close", onTap: () => Navigator.pop(context)),
+            ],
+          ),
     );
   }
 
@@ -356,7 +378,8 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   Future<void> _clearData() async {
     final confirm = await _confirmDialog(
       title: "Clear Data",
-      message: "Are you sure you want to clear all data? This cannot be undone.",
+      message:
+          "Are you sure you want to clear all data? This cannot be undone.",
       confirmText: "Clear",
       destructive: true,
     );
@@ -451,21 +474,28 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   }) {
     return showDialog<bool>(
       context: context,
-      builder: (_) => _ThemedDialog(
-        title: title,
-        child: Text(
-          message,
-          style: TextStyle(color: Colors.white.withOpacity(0.75), height: 1.3),
-        ),
-        actions: [
-          _dialogButton(text: "Cancel", onTap: () => Navigator.pop(context, false)),
-          _dialogButton(
-            text: confirmText,
-            destructive: destructive,
-            onTap: () => Navigator.pop(context, true),
+      builder:
+          (_) => _ThemedDialog(
+            title: title,
+            child: Text(
+              message,
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.75),
+                height: 1.3,
+              ),
+            ),
+            actions: [
+              _dialogButton(
+                text: "Cancel",
+                onTap: () => Navigator.pop(context, false),
+              ),
+              _dialogButton(
+                text: confirmText,
+                destructive: destructive,
+                onTap: () => Navigator.pop(context, true),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
@@ -474,128 +504,157 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
   Future<void> _showEditProfileDialog() async {
     await showDialog(
       context: context,
-      builder: (ctx) => _ThemedDialog(
-        title: "Edit Profile",
-        child: SingleChildScrollView(
-          child: Form(
-            key: _formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                GestureDetector(
-                  onTap: _pickProfileImage,
-                  child: Stack(
-                    children: [
-                      CircleAvatar(
-                        radius: 44,
-                        backgroundColor: Colors.white.withOpacity(0.08),
-                        backgroundImage: _profileImagePath != null
-                            ? FileImage(File(_profileImagePath!))
-                            : const AssetImage('lib/images/genie.png') as ImageProvider,
-                      ),
-                      Positioned(
-                        bottom: 0,
-                        right: 0,
-                        child: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: _accent,
-                            borderRadius: BorderRadius.circular(999),
-                            border: Border.all(color: Colors.white.withOpacity(0.18)),
+      builder:
+          (ctx) => _ThemedDialog(
+            title: "Edit Profile",
+            child: SingleChildScrollView(
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    GestureDetector(
+                      onTap: _pickProfileImage,
+                      child: Stack(
+                        children: [
+                          CircleAvatar(
+                            radius: 44,
+                            backgroundColor: Colors.white.withOpacity(0.08),
+                            backgroundImage:
+                                _profileImagePath != null
+                                    ? FileImage(File(_profileImagePath!))
+                                    : const AssetImage('lib/images/genie.png')
+                                        as ImageProvider,
                           ),
-                          child: const Icon(Icons.camera_alt_rounded, size: 16, color: Colors.white),
-                        ),
+                          Positioned(
+                            bottom: 0,
+                            right: 0,
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: _accent,
+                                borderRadius: BorderRadius.circular(999),
+                                border: Border.all(
+                                  color: Colors.white.withOpacity(0.18),
+                                ),
+                              ),
+                              child: const Icon(
+                                Icons.camera_alt_rounded,
+                                size: 16,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 14),
+                    ),
+                    const SizedBox(height: 14),
 
-                _field(
-                  controller: _nameController,
-                  label: "Name",
-                  maxLength: 50,
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) return 'Name is required';
-                    if (value.length > 50) return 'Name must be 50 characters or less';
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 10),
+                    _field(
+                      controller: _nameController,
+                      label: "Name",
+                      maxLength: 50,
+                      validator: (value) {
+                        if (value == null || value.trim().isEmpty)
+                          return 'Name is required';
+                        if (value.length > 50)
+                          return 'Name must be 50 characters or less';
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 10),
 
-                _field(
-                  controller: _ageController,
-                  label: "Age",
-                  maxLength: 3,
-                  keyboardType: TextInputType.number,
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) return 'Age is required';
-                    final age = int.tryParse(value);
-                    if (age == null || age <= 0 || age > 150) return 'Enter a valid age (1-150)';
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 10),
+                    _field(
+                      controller: _ageController,
+                      label: "Age",
+                      maxLength: 3,
+                      keyboardType: TextInputType.number,
+                      validator: (value) {
+                        if (value == null || value.trim().isEmpty)
+                          return 'Age is required';
+                        final age = int.tryParse(value);
+                        if (age == null || age <= 0 || age > 150)
+                          return 'Enter a valid age (1-150)';
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 10),
 
-                DropdownButtonFormField<String>(
-                  value: _selectedGender,
-                  dropdownColor: _cardBase,
-                  decoration: _inputDecoration("Gender"),
-                  style: const TextStyle(color: Colors.white),
-                  items: _genderOptions
-                      .map((g) => DropdownMenuItem(value: g, child: Text(g)))
-                      .toList(),
-                  onChanged: (value) => setState(() => _selectedGender = value),
-                ),
-                const SizedBox(height: 10),
+                    DropdownButtonFormField<String>(
+                      value: _selectedGender,
+                      dropdownColor: _cardBase,
+                      decoration: _inputDecoration("Gender"),
+                      style: const TextStyle(color: Colors.white),
+                      items:
+                          _genderOptions
+                              .map(
+                                (g) =>
+                                    DropdownMenuItem(value: g, child: Text(g)),
+                              )
+                              .toList(),
+                      onChanged:
+                          (value) => setState(() => _selectedGender = value),
+                    ),
+                    const SizedBox(height: 10),
 
-                MultiSelectDialogField(
-                  items: _dietaryOptions.map((o) => MultiSelectItem(o, o)).toList(),
-                  initialValue: _selectedDietaryPreferences,
-                  title: const Text('Dietary Preferences'),
-                  buttonText: Text(
-                    'Dietary Preferences',
-                    style: TextStyle(color: Colors.white.withOpacity(0.78)),
-                  ),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.white.withOpacity(0.14)),
-                    borderRadius: BorderRadius.circular(14),
-                    color: Colors.white.withOpacity(0.06),
-                  ),
-                  selectedColor: _accent,
-                  backgroundColor: _cardBase,
-                  itemsTextStyle: const TextStyle(color: Colors.white),
-                  selectedItemsTextStyle: const TextStyle(color: Colors.white),
-                  onConfirm: (values) {
-                    setState(() => _selectedDietaryPreferences = values.cast<String>());
-                  },
-                ),
-                const SizedBox(height: 10),
+                    MultiSelectDialogField(
+                      items:
+                          _dietaryOptions
+                              .map((o) => MultiSelectItem(o, o))
+                              .toList(),
+                      initialValue: _selectedDietaryPreferences,
+                      title: const Text('Dietary Preferences'),
+                      buttonText: Text(
+                        'Dietary Preferences',
+                        style: TextStyle(color: Colors.white.withOpacity(0.78)),
+                      ),
+                      decoration: BoxDecoration(
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.14),
+                        ),
+                        borderRadius: BorderRadius.circular(14),
+                        color: Colors.white.withOpacity(0.06),
+                      ),
+                      selectedColor: _accent,
+                      backgroundColor: _cardBase,
+                      itemsTextStyle: const TextStyle(color: Colors.white),
+                      selectedItemsTextStyle: const TextStyle(
+                        color: Colors.white,
+                      ),
+                      onConfirm: (values) {
+                        setState(
+                          () =>
+                              _selectedDietaryPreferences =
+                                  values.cast<String>(),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 10),
 
-                _field(
-                  controller: _allergiesController,
-                  label: "Allergies (comma-separated)",
-                  maxLines: 2,
+                    _field(
+                      controller: _allergiesController,
+                      label: "Allergies (comma-separated)",
+                      maxLines: 2,
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
+            actions: [
+              _dialogButton(text: "Cancel", onTap: () => Navigator.pop(ctx)),
+              _dialogButton(
+                text: "Save",
+                primary: true,
+                onTap: () async {
+                  if (_formKey.currentState!.validate()) {
+                    await _saveProfileAndSettings();
+                    if (ctx.mounted) Navigator.pop(ctx);
+                    setState(() {});
+                  }
+                },
+              ),
+            ],
           ),
-        ),
-        actions: [
-          _dialogButton(text: "Cancel", onTap: () => Navigator.pop(ctx)),
-          _dialogButton(
-            text: "Save",
-            primary: true,
-            onTap: () async {
-              if (_formKey.currentState!.validate()) {
-                await _saveProfileAndSettings();
-                if (ctx.mounted) Navigator.pop(ctx);
-                setState(() {});
-              }
-            },
-          ),
-        ],
-      ),
     );
   }
 
@@ -671,9 +730,10 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
               width: 42,
               height: 42,
               decoration: BoxDecoration(
-                color: destructive
-                    ? const Color(0xFFE74C3C).withOpacity(0.18)
-                    : _accent.withOpacity(0.16),
+                color:
+                    destructive
+                        ? const Color(0xFFE74C3C).withOpacity(0.18)
+                        : _accent.withOpacity(0.16),
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(color: Colors.white.withOpacity(0.12)),
               ),
@@ -687,12 +747,18 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
               child: Text(
                 title,
                 style: TextStyle(
-                  color: destructive ? const Color(0xFFFFB4B4) : Colors.white.withOpacity(0.92),
+                  color:
+                      destructive
+                          ? const Color(0xFFFFB4B4)
+                          : Colors.white.withOpacity(0.92),
                   fontWeight: FontWeight.w800,
                 ),
               ),
             ),
-            Icon(Icons.chevron_right_rounded, color: Colors.white.withOpacity(0.35)),
+            Icon(
+              Icons.chevron_right_rounded,
+              color: Colors.white.withOpacity(0.35),
+            ),
           ],
         ),
       ),
@@ -705,15 +771,17 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
     bool primary = false,
     bool destructive = false,
   }) {
-    final Color bg = destructive
-        ? const Color(0xFFE74C3C).withOpacity(0.18)
-        : primary
+    final Color bg =
+        destructive
+            ? const Color(0xFFE74C3C).withOpacity(0.18)
+            : primary
             ? _accent.withOpacity(0.22)
             : Colors.white.withOpacity(0.06);
 
-    final Color fg = destructive
-        ? const Color(0xFFFFB4B4)
-        : primary
+    final Color fg =
+        destructive
+            ? const Color(0xFFFFB4B4)
+            : primary
             ? _accent
             : Colors.white.withOpacity(0.85);
 
@@ -750,17 +818,29 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
           Positioned(
             left: 22,
             top: 110,
-            child: Icon(Icons.auto_awesome, color: Colors.white.withOpacity(0.06), size: 28),
+            child: Icon(
+              Icons.auto_awesome,
+              color: Colors.white.withOpacity(0.06),
+              size: 28,
+            ),
           ),
           Positioned(
             right: 18,
             top: 160,
-            child: Icon(Icons.auto_awesome, color: Colors.white.withOpacity(0.05), size: 34),
+            child: Icon(
+              Icons.auto_awesome,
+              color: Colors.white.withOpacity(0.05),
+              size: 34,
+            ),
           ),
           Positioned(
             right: 60,
             top: 380,
-            child: Icon(Icons.auto_awesome, color: Colors.white.withOpacity(0.05), size: 26),
+            child: Icon(
+              Icons.auto_awesome,
+              color: Colors.white.withOpacity(0.05),
+              size: 26,
+            ),
           ),
         ],
       ),
@@ -779,8 +859,10 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final name = _nameController.text.isEmpty ? 'John Doe' : _nameController.text;
-    final email = FirebaseAuth.instance.currentUser?.email ?? 'john@example.com';
+    final name =
+        _nameController.text.isEmpty ? 'John Doe' : _nameController.text;
+    final email =
+        FirebaseAuth.instance.currentUser?.email ?? 'john@example.com';
 
     return Scaffold(
       backgroundColor: _bgTop,
@@ -799,158 +881,169 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
           _bgGradient(),
           _bgStars(),
           SafeArea(
-            child: _isLoading
-                ? const Center(child: CircularProgressIndicator())
-                : ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
-                    children: [
-                      // Profile header card
-                      Container(
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(22),
-                          gradient: LinearGradient(
-                            colors: [
-                              Colors.white.withOpacity(0.06),
-                              _accent2.withOpacity(0.14),
-                            ],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                          ),
-                          border: Border.all(color: Colors.white.withOpacity(0.12)),
-                          boxShadow: [
-                            BoxShadow(
-                              color: _accent.withOpacity(0.12),
-                              blurRadius: 20,
-                              offset: const Offset(0, 12),
+            child:
+                _isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : ListView(
+                      padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+                      children: [
+                        // Profile header card
+                        Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(22),
+                            gradient: LinearGradient(
+                              colors: [
+                                Colors.white.withOpacity(0.06),
+                                _accent2.withOpacity(0.14),
+                              ],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
                             ),
-                          ],
-                        ),
-                        child: Row(
-                          children: [
-                            CircleAvatar(
-                              radius: 26,
-                              backgroundColor: Colors.white.withOpacity(0.08),
-                              backgroundImage: _profileImagePath != null
-                                  ? FileImage(File(_profileImagePath!))
-                                  : const AssetImage('lib/images/genie.png') as ImageProvider,
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.12),
                             ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    name,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontWeight: FontWeight.w900,
-                                      fontSize: 16,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    email,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      color: Colors.white.withOpacity(0.62),
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 12.5,
-                                    ),
-                                  ),
-                                ],
+                            boxShadow: [
+                              BoxShadow(
+                                color: _accent.withOpacity(0.12),
+                                blurRadius: 20,
+                                offset: const Offset(0, 12),
                               ),
-                            ),
-                            IconButton(
-                              onPressed: _showEditProfileDialog,
-                              icon: const Icon(Icons.edit_rounded, color: Colors.white),
-                              tooltip: 'Edit Profile',
-                            ),
-                          ],
-                        ),
-                      ),
-
-                      const SizedBox(height: 14),
-
-                      // Settings section
-                      _sectionTitle("Preferences"),
-                      const SizedBox(height: 10),
-
-                      _actionTile(
-                        icon: Icons.mic_rounded,
-                        title: 'AI Voice Assistant',
-                        onTap: _showVoiceAssistantDialog,
-                      ),
-                      const SizedBox(height: 10),
-
-                      _switchTile(
-                        icon: Icons.palette_rounded,
-                        title: "Theme Mode",
-                        subtitle: _isDarkMode ? "Dark" : "Light",
-                        value: _isDarkMode,
-                        onChanged: _toggleTheme,
-                      ),
-                      const SizedBox(height: 10),
-
-                      _switchTile(
-                        icon: Icons.notifications_rounded,
-                        title: "Notifications",
-                        subtitle: _notificationsEnabled ? "Enabled" : "Disabled",
-                        value: _notificationsEnabled,
-                        onChanged: _toggleNotifications,
-                      ),
-
-                      const SizedBox(height: 18),
-                      _sectionTitle("Security"),
-                      const SizedBox(height: 10),
-
-                      _actionTile(
-                        icon: Icons.security_rounded,
-                        title: 'Privacy & Security',
-                        onTap: _showPrivacyDialog,
-                      ),
-                      const SizedBox(height: 10),
-
-                      _actionTile(
-                        icon: Icons.info_rounded,
-                        title: 'About & App Info',
-                        onTap: _showAboutDialog,
-                      ),
-                      const SizedBox(height: 10),
-
-                      _actionTile(
-                        icon: Icons.help_rounded,
-                        title: 'Help & Support',
-                        onTap: _showHelpDialog,
-                      ),
-
-                      const SizedBox(height: 18),
-                      _sectionTitle("Account"),
-                      const SizedBox(height: 10),
-
-                      _actionTile(
-                        icon: Icons.logout_rounded,
-                        title: 'Logout',
-                        destructive: true,
-                        onTap: _logout,
-                      ),
-
-                      const SizedBox(height: 18),
-                      Center(
-                        child: Text(
-                          'CookGenie v1.0 • Powered by AI',
-                          style: TextStyle(
-                            color: Colors.white.withOpacity(0.45),
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
+                            ],
+                          ),
+                          child: Row(
+                            children: [
+                              CircleAvatar(
+                                radius: 26,
+                                backgroundColor: Colors.white.withOpacity(0.08),
+                                backgroundImage:
+                                    _profileImagePath != null
+                                        ? FileImage(File(_profileImagePath!))
+                                        : const AssetImage(
+                                              'lib/images/genie.png',
+                                            )
+                                            as ImageProvider,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      name,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w900,
+                                        fontSize: 16,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      email,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        color: Colors.white.withOpacity(0.62),
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 12.5,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              IconButton(
+                                onPressed: _showEditProfileDialog,
+                                icon: const Icon(
+                                  Icons.edit_rounded,
+                                  color: Colors.white,
+                                ),
+                                tooltip: 'Edit Profile',
+                              ),
+                            ],
                           ),
                         ),
-                      ),
-                    ],
-                  ),
+
+                        const SizedBox(height: 14),
+
+                        // Settings section
+                        _sectionTitle("Preferences"),
+                        const SizedBox(height: 10),
+
+                        _actionTile(
+                          icon: Icons.mic_rounded,
+                          title: 'AI Voice Assistant',
+                          onTap: _showVoiceAssistantDialog,
+                        ),
+                        // const SizedBox(height: 10),
+
+                        // _switchTile(
+                        //   icon: Icons.palette_rounded,
+                        //   title: "Theme Mode",
+                        //   subtitle: _isDarkMode ? "Dark" : "Light",
+                        //   value: _isDarkMode,
+                        //   onChanged: _toggleTheme,
+                        // ),
+                        const SizedBox(height: 10),
+
+                        _switchTile(
+                          icon: Icons.notifications_rounded,
+                          title: "Notifications",
+                          subtitle:
+                              _notificationsEnabled ? "Enabled" : "Disabled",
+                          value: _notificationsEnabled,
+                          onChanged: _toggleNotifications,
+                        ),
+
+                        const SizedBox(height: 18),
+                        _sectionTitle("Security"),
+                        const SizedBox(height: 10),
+
+                        _actionTile(
+                          icon: Icons.security_rounded,
+                          title: 'Privacy & Security',
+                          onTap: _showPrivacyDialog,
+                        ),
+                        const SizedBox(height: 10),
+
+                        _actionTile(
+                          icon: Icons.info_rounded,
+                          title: 'About & App Info',
+                          onTap: _showAboutDialog,
+                        ),
+                        const SizedBox(height: 10),
+
+                        _actionTile(
+                          icon: Icons.help_rounded,
+                          title: 'Help & Support',
+                          onTap: _showHelpDialog,
+                        ),
+
+                        const SizedBox(height: 18),
+                        _sectionTitle("Account"),
+                        const SizedBox(height: 10),
+
+                        _actionTile(
+                          icon: Icons.logout_rounded,
+                          title: 'Logout',
+                          destructive: true,
+                          onTap: _logout,
+                        ),
+
+                        const SizedBox(height: 18),
+                        Center(
+                          child: Text(
+                            'CookGenie v1.0 • Powered by AI',
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.45),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
           ),
         ],
       ),
@@ -981,10 +1074,7 @@ class _ProfileSettingsScreenState extends State<ProfileSettingsScreen> {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
         gradient: LinearGradient(
-          colors: [
-            Colors.white.withOpacity(0.06),
-            _accent2.withOpacity(0.12),
-          ],
+          colors: [Colors.white.withOpacity(0.06), _accent2.withOpacity(0.12)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -1072,7 +1162,10 @@ class _ThemedDialog extends StatelessWidget {
           const SizedBox(width: 10),
           Text(
             title,
-            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900),
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w900,
+            ),
           ),
         ],
       ),

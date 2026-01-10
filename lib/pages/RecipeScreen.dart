@@ -55,7 +55,6 @@ class _RecipeScreenState extends State<RecipeScreen> {
   static const Color _bgBottom = Color(0xFF1C0B33);
   static const Color _accent = Color(0xFFB57BFF);
   static const Color _accent2 = Color(0xFF7E3FF2);
-  static const Color _navBg = Color(0xFF120A22);
 
   @override
   void initState() {
@@ -73,8 +72,7 @@ class _RecipeScreenState extends State<RecipeScreen> {
         _recipe = widget.initialRecipe;
         _hasSearched = true;
         _ttsText = _formatRecipe(_recipe!);
-        _isFavorite =
-            widget.savedRecipes.any((r) => r['name'] == _recipe!['name']);
+        _isFavorite = widget.savedRecipes.any((r) => r['name'] == _recipe!['name']);
 
         voiceController.startRecipeReading(_formatRecipe(_recipe!));
       } else {
@@ -93,8 +91,7 @@ class _RecipeScreenState extends State<RecipeScreen> {
         _recipe = widget.initialRecipe;
         _hasSearched = true;
         _ttsText = _formatRecipe(_recipe!);
-        _isFavorite =
-            widget.savedRecipes.any((r) => r['name'] == _recipe!['name']);
+        _isFavorite = widget.savedRecipes.any((r) => r['name'] == _recipe!['name']);
       }
     }
   }
@@ -240,21 +237,70 @@ class _RecipeScreenState extends State<RecipeScreen> {
   }
 
   String _formatRecipe(Map<String, dynamic> recipe) {
-    final buffer = StringBuffer();
+  final buffer = StringBuffer();
 
-    buffer.writeln('Recipe: ${recipe['name']}');
-    buffer.writeln('Ingredients:');
-    for (var ingredient in recipe['ingredients']) {
-      buffer.writeln('${ingredient['name']} - ${ingredient['quantity']}');
-    }
-
-    buffer.writeln('Instructions:');
-    for (var step in recipe['instructions']) {
-      buffer.writeln(step);
-    }
-
-    return buffer.toString();
+  // Debug: Print the entire recipe structure
+  print("📋 Formatting recipe:");
+  print("Recipe keys: ${recipe.keys.toList()}");
+  print("Recipe name: ${recipe['name']}");
+  
+  buffer.writeln('Recipe: ${recipe['name']}');
+  buffer.writeln();
+  
+  // Debug ingredients
+  print("Ingredients type: ${recipe['ingredients'].runtimeType}");
+  print("Ingredients length: ${(recipe['ingredients'] as List?)?.length ?? 0}");
+  
+  buffer.writeln('Ingredients:');
+  final ingredients = recipe['ingredients'] as List? ?? [];
+  
+  if (ingredients.isEmpty) {
+    print("⚠️ WARNING: No ingredients found!");
   }
+  
+  for (var ingredient in ingredients) {
+    print("Ingredient: $ingredient (${ingredient.runtimeType})");
+    
+    // Handle different ingredient formats
+    if (ingredient is Map) {
+      final name = ingredient['name'] ?? '';
+      final quantity = ingredient['quantity'] ?? '';
+      buffer.writeln('$name - $quantity');
+    } else if (ingredient is String) {
+      buffer.writeln(ingredient);
+    }
+  }
+
+  buffer.writeln();
+  
+  // Debug instructions
+  print("Instructions type: ${recipe['instructions'].runtimeType}");
+  print("Instructions length: ${(recipe['instructions'] as List?)?.length ?? 0}");
+  
+  buffer.writeln('Instructions:');
+  final instructions = recipe['instructions'] as List? ?? [];
+  
+  if (instructions.isEmpty) {
+    print("⚠️ WARNING: No instructions found!");
+  }
+  
+  for (int i = 0; i < instructions.length; i++) {
+    print("Instruction $i: ${instructions[i]}");
+    buffer.writeln('${i + 1}. ${instructions[i]}');
+  }
+
+  final result = buffer.toString();
+  
+  // Print the complete formatted text
+  print("📝 Complete formatted recipe:");
+  print("═" * 50);
+  print(result);
+  print("═" * 50);
+  print("Total length: ${result.length} characters");
+  print("Total lines: ${result.split('\n').length}");
+  
+  return result;
+}
 
   Future<void> _toggleFavorite() async {
     if (_recipe == null) return;
@@ -602,7 +648,7 @@ class _RecipeScreenState extends State<RecipeScreen> {
       child: Scaffold(
         backgroundColor: _bgTop,
         appBar: AppBar(
-          backgroundColor: _navBg,
+          backgroundColor: const Color(0xFF120A22),
           elevation: 0,
           centerTitle: true,
           title: const Text(
@@ -610,10 +656,6 @@ class _RecipeScreenState extends State<RecipeScreen> {
             style: TextStyle(fontWeight: FontWeight.w900),
           ),
           foregroundColor: Colors.white,
-          leading: IconButton(
-            icon: Icon(Icons.arrow_back_rounded, color: Colors.white.withOpacity(0.92)),
-            onPressed: () => Navigator.pop(context),
-          ),
           actions: [
             if (_recipe != null)
               IconButton(
@@ -642,11 +684,15 @@ class _RecipeScreenState extends State<RecipeScreen> {
                     _voiceStatusPill(),
                     const SizedBox(height: 12),
 
-                    if (_awaitingReadyConfirmation && _recipe != null) _essentialsCard(),
-                    if (_awaitingReadyConfirmation && _recipe != null) const SizedBox(height: 12),
+                    if (_awaitingReadyConfirmation && _recipe != null)
+                      _essentialsCard(),
+                    if (_awaitingReadyConfirmation && _recipe != null)
+                      const SizedBox(height: 12),
 
-                    if (_suggestedRecipes != null && _suggestedRecipes!.isNotEmpty) _suggestionsCard(),
-                    if (_suggestedRecipes != null && _suggestedRecipes!.isNotEmpty) const SizedBox(height: 12),
+                    if (_suggestedRecipes != null && _suggestedRecipes!.isNotEmpty)
+                      _suggestionsCard(),
+                    if (_suggestedRecipes != null && _suggestedRecipes!.isNotEmpty)
+                      const SizedBox(height: 12),
 
                     Expanded(child: _content()),
                   ],
@@ -661,10 +707,11 @@ class _RecipeScreenState extends State<RecipeScreen> {
 
   Widget _content() {
     if (!_hasSearched) {
-      return _emptyState(
-        title: "Search a recipe",
-        subtitle: "Type a dish name or tap the mic to search by voice.",
-        icon: Icons.menu_book_rounded,
+      return Center(
+        child: Text(
+          'Search for a recipe to begin.',
+          style: TextStyle(color: Colors.white.withOpacity(0.65), fontWeight: FontWeight.w600),
+        ),
       );
     }
 
@@ -675,56 +722,15 @@ class _RecipeScreenState extends State<RecipeScreen> {
     }
 
     if (_recipe == null) {
-      return _emptyState(
-        title: "No recipe found",
-        subtitle: "Try another dish name (e.g. pasta, biryani, karahi).",
-        icon: Icons.search_off_rounded,
+      return Center(
+        child: Text(
+          'No recipe found.',
+          style: TextStyle(color: Colors.white.withOpacity(0.65), fontWeight: FontWeight.w700),
+        ),
       );
     }
 
     return _buildRecipeDetailsThemed();
-  }
-
-  Widget _emptyState({
-    required String title,
-    required String subtitle,
-    required IconData icon,
-  }) {
-    return Center(
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(22),
-          color: Colors.white.withOpacity(0.06),
-          border: Border.all(color: Colors.white.withOpacity(0.10)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 34, color: _accent.withOpacity(0.9)),
-            const SizedBox(height: 10),
-            Text(
-              title,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w900,
-                fontSize: 16,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              subtitle,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.white.withOpacity(0.70),
-                fontWeight: FontWeight.w600,
-                height: 1.25,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   Widget _searchRow() {
@@ -753,12 +759,11 @@ class _RecipeScreenState extends State<RecipeScreen> {
             ),
             child: TextField(
               controller: _controller,
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+              style: const TextStyle(color: Colors.white),
               cursorColor: _accent,
               decoration: InputDecoration(
-                prefixIcon: Icon(Icons.search_rounded, color: Colors.white.withOpacity(0.70)),
-                hintText: "Search recipe (e.g., chicken biryani)",
-                hintStyle: TextStyle(color: Colors.white.withOpacity(0.45), fontWeight: FontWeight.w600),
+                hintText: "e.g., chicken biryani",
+                hintStyle: TextStyle(color: Colors.white.withOpacity(0.45)),
                 border: InputBorder.none,
                 contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
               ),
@@ -807,10 +812,8 @@ class _RecipeScreenState extends State<RecipeScreen> {
   Widget _voiceStatusPill() {
     return GetBuilder<VoiceAssistantController>(
       builder: (controller) {
-        final shouldShow = controller.isRecipeSpeaking ||
-            controller.isRecipePaused ||
-            _isRecipeNameListening ||
-            _awaitingReadyConfirmation;
+        final shouldShow =
+            controller.isRecipeSpeaking || controller.isRecipePaused || _isRecipeNameListening || _awaitingReadyConfirmation;
 
         if (!shouldShow) return const SizedBox.shrink();
 
@@ -1016,10 +1019,12 @@ class _RecipeScreenState extends State<RecipeScreen> {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              Icon(
-                Icons.auto_awesome_rounded,
-                color: _accent.withOpacity(0.9),
-                size: 18,
+              IconButton(
+                icon: Icon(
+                  _isFavorite ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                  color: _isFavorite ? _accent : Colors.white.withOpacity(0.7),
+                ),
+                onPressed: _toggleFavorite,
               ),
             ],
           ),

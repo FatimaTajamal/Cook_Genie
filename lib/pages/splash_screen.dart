@@ -22,45 +22,36 @@ class _SplashScreenState extends State<SplashScreen>
 
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 3),
+      duration: const Duration(seconds: 2),
     );
 
-    _fadeAnimation = Tween<double>(begin: 1.0, end: 0.0).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
+    _fadeAnimation = Tween<double>(
+      begin: 1.0,
+      end: 0.0,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
 
-    _scaleAnimation = Tween<double>(begin: 1.0, end: 0.8).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-    );
+    _scaleAnimation = Tween<double>(
+      begin: 1.0,
+      end: 0.9,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeInOut));
 
     _controller.forward();
-
     _initApp();
   }
 
   Future<void> _initApp() async {
-    // Wait for animation
-    await Future.delayed(const Duration(seconds: 3));
+    await Future.delayed(const Duration(seconds: 7));
 
-    // Request microphone permission
-    var micStatus = await Permission.microphone.request();
+    await Permission.microphone.request();
 
     if (!mounted) return;
 
-    if (micStatus.isDenied || micStatus.isPermanentlyDenied) {
-      Get.snackbar(
-        "Permission Required",
-        "Microphone access is needed for voice commands.",
-        snackPosition: SnackPosition.BOTTOM,
-      );
-    }
-
-    // Now check login
     final user = FirebaseAuth.instance.currentUser;
+
     if (user != null) {
-      Get.offNamed('/main');
+      Get.offAllNamed('/main');
     } else {
-      Get.offNamed('/login');
+      Get.offAllNamed('/');
     }
   }
 
@@ -80,14 +71,81 @@ class _SplashScreenState extends State<SplashScreen>
             opacity: _fadeAnimation,
             child: ScaleTransition(
               scale: _scaleAnimation,
-              child: Image.asset(
-                'lib/images/genie.png',
-                fit: BoxFit.cover,
-              ),
+              child: _bgGradient(),
             ),
           ),
-          const Center(
-            child: CircularProgressIndicator(color: Colors.white),
+          _bgStars(),
+          _content(),
+        ],
+      ),
+    );
+  }
+
+  Widget _content() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: const [
+          Icon(Icons.auto_awesome_rounded, size: 120, color: Color(0xFFB57BFF)),
+          SizedBox(height: 24),
+          Text(
+            'COOK GENIE',
+            style: TextStyle(
+              fontFamily: 'Cinzel',
+              fontSize: 34,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 2,
+              color: Colors.white,
+            ),
+          ),
+          SizedBox(height: 8),
+          Text(
+            'Your Magical Cooking Assistant',
+            style: TextStyle(
+              fontFamily: 'Poppins',
+              fontSize: 16,
+              color: Colors.white70,
+            ),
+          ),
+          SizedBox(height: 20),
+          SizedBox(
+            width: 40,
+            height: 40,
+            child: CircularProgressIndicator(
+              strokeWidth: 3,
+              color: Color(0xFFB57BFF),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _bgGradient() {
+    return const DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Color(0xFF0B0615), Color(0xFF130A26), Color(0xFF1C0B33)],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ),
+      ),
+    );
+  }
+
+  Widget _bgStars() {
+    return IgnorePointer(
+      child: Stack(
+        children: const [
+          Positioned(
+            left: 22,
+            top: 110,
+            child: Icon(Icons.auto_awesome, color: Colors.white12, size: 28),
+          ),
+          Positioned(
+            right: 18,
+            top: 160,
+            child: Icon(Icons.auto_awesome, color: Colors.white10, size: 34),
           ),
         ],
       ),

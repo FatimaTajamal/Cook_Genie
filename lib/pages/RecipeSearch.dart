@@ -220,10 +220,12 @@ class RecipeService {
   // -------------------- CATEGORY (PAGINATED for Load More) --------------------
   // ✅ This is the function your CategoryRecipeScreen should call.
   // ✅ Default limit = 3 (so it loads only 3 initially).
+  // ✅ NEW: excludeIds parameter to prevent duplicates
   static Future<CategoryRecipesResponse> getCategoryRecipesPaged({
     required String category,
     int page = 1,
     int limit = 3,
+    List<String>? excludeIds, // NEW: Optional list of already shown recipe IDs
   }) async {
     final List<String> preferences = await _getDietaryPreferences();
     final List<String> allergies = await _getAllergies();
@@ -234,6 +236,8 @@ class RecipeService {
       "allergies": allergies,
       "page": page,
       "limit": limit,
+      if (excludeIds != null && excludeIds.isNotEmpty) 
+        "excludeIds": excludeIds, // Include excludeIds if provided
     };
 
     try {
@@ -298,11 +302,13 @@ class RecipeService {
     required String category,
     int page = 1,
     int limit = 3,
+    List<String>? excludeIds, // NEW: Pass through excludeIds
   }) async {
     final res = await getCategoryRecipesPaged(
       category: category,
       page: page,
       limit: limit,
+      excludeIds: excludeIds, // Pass excludeIds to paged method
     );
     return res.recipes;
   }

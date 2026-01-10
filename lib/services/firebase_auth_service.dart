@@ -1,8 +1,11 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart'; // ✅ NEW
 import '../../global/toast.dart';
 
 class FirebaseAuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
+
+  final GoogleSignIn _googleSignIn = GoogleSignIn(); // ✅ NEW
 
   Future<User?> signUpWithEmailAndPassword(String email, String password) async {
     try {
@@ -52,7 +55,42 @@ class FirebaseAuthService {
     return null;
   }
 
+  // ============================
+  // 🔥 GOOGLE SIGN-IN (NEW)
+  // ============================
+  Future<User?> signInWithGoogle() async {
+    try {
+      final GoogleSignInAccount? googleUser =
+          await _googleSignIn.signIn();
+
+      if (googleUser == null) {
+        showToast(message: 'Google sign-in cancelled.');
+        return null;
+      }
+
+      final GoogleSignInAuthentication googleAuth =
+          await googleUser.authentication;
+
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
+      final userCredential =
+          await _auth.signInWithCredential(credential);
+
+      return userCredential.user;
+    } on FirebaseAuthException catch (e) {
+      showToast(message: 'Google sign-in failed: ${e.code}');
+    } catch (e) {
+      print('Unexpected Google sign-in error: $e');
+      showToast(message: 'Google sign-in failed.');
+    }
+    return null;
+  }
+
   Future<void> signOut() async {
+    await _googleSignIn.signOut(); // ✅ Google logout
     await _auth.signOut();
   }
 

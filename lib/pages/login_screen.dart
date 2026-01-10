@@ -24,7 +24,6 @@ class _LoginScreenState extends State<LoginScreen> {
   final _passwordController = TextEditingController();
 
   final FirebaseAuthService _auth = FirebaseAuthService();
-  final _googleSignIn = GoogleSignIn(scopes: ['email']);
 
   bool _isLoading = false;
   bool _obscure = true;
@@ -75,39 +74,27 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _signInWithGoogle() async {
-    setState(() => _isLoading = true);
-    try {
-      final googleUser = await _googleSignIn.signIn();
-      if (googleUser == null) {
-        if (mounted) setState(() => _isLoading = false);
-        return;
-      }
+  setState(() => _isLoading = true);
+  try {
+    final user = await _auth.signInWithGoogle();
 
-      final googleAuth = await googleUser.authentication;
-      final credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
-      );
+    if (!mounted) return;
 
-      final userCredential =
-          await FirebaseAuth.instance.signInWithCredential(credential);
-
-      if (!mounted || userCredential.user == null) {
-        showToast(message: "Google Sign-In failed. Please try again.");
-        return;
-      }
-
-      showToast(message: "Signed in with Google ✅");
-      Get.off(() => const MainScreen());
-    } on FirebaseAuthException catch (e) {
-      showToast(message: _getFriendlyErrorMessage(e));
-    } catch (e) {
-      debugPrint('Unexpected Error: $e');
-      showToast(message: "An unexpected error occurred. Please try again.");
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+    if (user == null) {
+      showToast(message: "Google sign-in cancelled.");
+      return;
     }
+
+    showToast(message: "Signed in with Google ✅");
+    Get.off(() => const MainScreen());
+  } catch (e) {
+    debugPrint("Google Sign-In Error: $e");
+    showToast(message: "Google sign-in failed. Please try again.");
+  } finally {
+    if (mounted) setState(() => _isLoading = false);
   }
+}
+
 
   String _getFriendlyErrorMessage(FirebaseAuthException e) {
     switch (e.code) {

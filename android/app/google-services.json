@@ -1,6 +1,7 @@
 {
   "project_info": {
     "project_number": "1033640517643",
+    "firebase_url": "https://cook-genie-2600f-default-rtdb.firebaseio.com",
     "project_id": "cook-genie-2600f",
     "storage_bucket": "cook-genie-2600f.firebasestorage.app"
   },
@@ -12,7 +13,20 @@
           "package_name": "com.example.cook_genie"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "1033640517643-1re6hkauacpnb3qg196l4jiadng8tdjh.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.cook_genie",
+            "certificate_hash": "b44cbc752d4462c3293b2b52651d4e07b47465d2"
+          }
+        },
+        {
+          "client_id": "1033640517643-ckqv1hp7rp84cd0tjga9h85f0904au91.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyD2SZ6NCSEOB3jcm4unxr6it_xtx_LkRew"
@@ -20,7 +34,19 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1033640517643-ckqv1hp7rp84cd0tjga9h85f0904au91.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "1033640517643-ckf3s6k7lf39b55i4eu5ncgtuacvms1j.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.cookGenie"
+              }
+            }
+          ]
         }
       }
     }
