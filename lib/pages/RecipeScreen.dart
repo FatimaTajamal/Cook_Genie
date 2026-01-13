@@ -56,45 +56,47 @@ class _RecipeScreenState extends State<RecipeScreen> {
   static const Color _accent = Color(0xFFB57BFF);
   static const Color _accent2 = Color(0xFF7E3FF2);
 
-  @override
-  void initState() {
-    super.initState();
+@override
+void initState() {
+  super.initState();
 
-    final voiceController = Get.find<VoiceAssistantController>();
+  final voiceController = Get.find<VoiceAssistantController>();
 
-    // Stop any home listening/speech
-    voiceController.stopAllSpeechRecognition();
-    voiceController.stopHomeListening();
-    voiceController.disableHomeAutoRestart();
+  // Stop any home listening/speech
+  voiceController.stopAllSpeechRecognition();
+  voiceController.stopHomeListening();
+  voiceController.disableHomeAutoRestart();
 
-    if (widget.isVoiceActivated) {
-      if (widget.initialRecipe != null) {
-        _recipe = widget.initialRecipe;
-        _hasSearched = true;
-        _ttsText = _formatRecipe(_recipe!);
-        _isFavorite = widget.savedRecipes.any((r) => r['name'] == _recipe!['name']);
+  if (widget.isVoiceActivated) {
+    if (widget.initialRecipe != null) {
+      _recipe = widget.initialRecipe;
+      _hasSearched = true;
+      _ttsText = _formatRecipe(_recipe!);
+      _isFavorite = widget.savedRecipes.any((r) => r['name'] == _recipe!['name']);
 
-        voiceController.startRecipeReading(_formatRecipe(_recipe!));
-      } else {
-        _waitingForInitialRecipeName = true;
-
-        WidgetsBinding.instance.addPostFrameCallback((_) async {
-          await voiceController.speak(
-            "Please say the name of the dish you want to search for.",
-          );
-          await Future.delayed(const Duration(milliseconds: 1500));
-          _initializeAndStartVoiceSearch();
-        });
-      }
+      voiceController.startRecipeReading(_formatRecipe(_recipe!));
     } else {
-      if (widget.initialRecipe != null) {
-        _recipe = widget.initialRecipe;
-        _hasSearched = true;
-        _ttsText = _formatRecipe(_recipe!);
-        _isFavorite = widget.savedRecipes.any((r) => r['name'] == _recipe!['name']);
-      }
+      _waitingForInitialRecipeName = true;
+
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        await voiceController.speak(
+          "Please say the name of the dish you want to search for.",
+        );
+        // CHANGED: Reduced delay from 1500ms to 300ms for faster microphone activation
+        await Future.delayed(const Duration(milliseconds: 300));
+        _initializeAndStartVoiceSearch();
+      });
+    }
+  } else {
+    if (widget.initialRecipe != null) {
+      _recipe = widget.initialRecipe;
+      _hasSearched = true;
+      _ttsText = _formatRecipe(_recipe!);
+      _isFavorite = widget.savedRecipes.any((r) => r['name'] == _recipe!['name']);
     }
   }
+}
+
 
   @override
   void dispose() {
@@ -541,78 +543,148 @@ class _RecipeScreenState extends State<RecipeScreen> {
     });
   }
 
-  Future<void> _initializeAndStartReadyListening() async {
-    if (_readySpeechInitialized) {
-      _startReadyConfirmationListening();
-      return;
-    }
+ Future<void> _initializeAndStartReadyListening() async {
+  if (_readySpeechInitialized) {
+    _startReadyConfirmationListening();
+    return;
+  }
 
-    bool available = await _readyConfirmationSpeech.initialize(
-      onStatus: (val) {
-        if (val == 'notListening' || val == 'done') {
+  bool available = await _readyConfirmationSpeech.initialize(
+    onStatus: (val) {
+      print("🎙️ Ready speech status: $val");
+      if (val == 'listening') {
+        // Listening started
+      } else if (val == 'notListening' || val == 'done') {
+        // CHANGED: Added auto-restart logic for persistent listening
+        if (_awaitingReadyConfirmation && mounted) {
+          print("🔄 Ready listening stopped, will auto-restart");
           _autoRestartReadyListening();
         }
-      },
-      onError: (val) {
+      }
+    },
+    onError: (val) {
+      print("❌ Ready speech error: $val");
+      // CHANGED: Added auto-restart on error
+      if (_awaitingReadyConfirmation && mounted) {
         _autoRestartReadyListening();
-      },
-    );
+      }
+    },
+  );
 
-    if (available) {
-      _readySpeechInitialized = true;
-      _startReadyConfirmationListening();
-    } else {
-      Future.delayed(const Duration(milliseconds: 500), _initializeAndStartReadyListening);
-    }
+  if (available) {
+    _readySpeechInitialized = true;
+    _startReadyConfirmationListening();
+  } else {
+    print("⚠️ Ready speech not available, retrying...");
+    Future.delayed(const Duration(milliseconds: 500), _initializeAndStartReadyListening);
   }
+}
 
   void _autoRestartReadyListening() {
-    if (_awaitingReadyConfirmation && mounted) {
-      Future.delayed(const Duration(milliseconds: 300), () {
-        if (_awaitingReadyConfirmation && mounted) {
-          _startReadyConfirmationListening();
-        }
-      });
-    }
+  print("🔄 Auto-restart ready listening check...");
+  print("   _awaitingReadyConfirmation: $_awaitingReadyConfirmation");
+  print("   mounted: $mounted");
+  
+  if (_awaitingReadyConfirmation && mounted) {
+    print("   ✅ Scheduling restart in 300ms");
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (_awaitingReadyConfirmation && mounted) {
+        print("   🎙️ Restarting ready listening now");
+        _startReadyConfirmationListening();
+      }
+    });
+  } else {
+    print("   ⏭️ Not restarting - conditions not met");
   }
+}
+
 
   void _startReadyConfirmationListening() async {
-    if (!mounted || !_awaitingReadyConfirmation || !_readySpeechInitialized) return;
+  print("🎯 _startReadyConfirmationListening called");
+  print("   _awaitingReadyConfirmation: $_awaitingReadyConfirmation");
+  print("   _readySpeechInitialized: $_readySpeechInitialized");
+  print("   mounted: $mounted");
+  
+  if (!mounted || !_awaitingReadyConfirmation || !_readySpeechInitialized) {
+    print("   ⏭️ Skipping - conditions not met");
+    return;
+  }
 
-    bool available = await _readyConfirmationSpeech.isAvailable;
-    if (!available) {
-      Future.delayed(const Duration(milliseconds: 500), _autoRestartReadyListening);
+  // ADDED: Stop any existing listening first for clean state
+  await _readyConfirmationSpeech.stop();
+  await Future.delayed(const Duration(milliseconds: 200));
+
+  bool available = await _readyConfirmationSpeech.isAvailable;
+  if (!available) {
+    print("   ⚠️ Speech not available, will retry");
+    Future.delayed(const Duration(milliseconds: 500), _autoRestartReadyListening);
+    return;
+  }
+
+  print("   🎙️ Starting to listen for 'ready'...");
+
+  try {
+    await _readyConfirmationSpeech.listen(
+      onResult: (val) async {
+        if (val.finalResult) {
+          String recognizedWords = val.recognizedWords.trim().toLowerCase();
+          final voiceController = Get.find<VoiceAssistantController>();
+
+          print("🎤 Ready mode heard: $recognizedWords");
+
+          if (!mounted) return;
+          setState(() => _controller.text = recognizedWords);
+
+          if (_awaitingReadyConfirmation && recognizedWords.contains("ready")) {
+            print("✅ 'Ready' detected! Starting recipe reading...");
+            
+            setState(() => _awaitingReadyConfirmation = false);
+            await _readyConfirmationSpeech.stop();
+
+            await voiceController.startRecipeReading(_formatRecipe(_recipe!));
+          }
+          // If we're still waiting and it wasn't "ready", listening will auto-restart via onStatus
+        } else {
+          // Partial results
+          if (mounted) setState(() => _controller.text = val.recognizedWords);
+        }
+      },
+      listenFor: const Duration(seconds: 60),
+      pauseFor: const Duration(seconds: 60),
+      partialResults: true,
+      cancelOnError: false,
+      listenMode: stt.ListenMode.confirmation,
+    );
+    
+    // ADDED: Start monitoring to ensure listening continues
+    _startReadyListeningMonitor();
+    
+  } catch (e) {
+    print("❌ Error starting ready listening: $e");
+    Future.delayed(const Duration(milliseconds: 500), _autoRestartReadyListening);
+  }
+}
+
+void _startReadyListeningMonitor() {
+  Future.delayed(const Duration(milliseconds: 2000), () async {
+    if (!mounted || !_awaitingReadyConfirmation) {
+      print("👀 Ready monitor - stopping (not mounted or not awaiting)");
       return;
     }
 
-    try {
-      await _readyConfirmationSpeech.listen(
-        onResult: (val) async {
-          if (val.finalResult) {
-            String recognizedWords = val.recognizedWords.trim().toLowerCase();
-            final voiceController = Get.find<VoiceAssistantController>();
-
-            if (!mounted) return;
-            setState(() => _controller.text = recognizedWords);
-
-            if (_awaitingReadyConfirmation && recognizedWords.contains("ready")) {
-              setState(() => _awaitingReadyConfirmation = false);
-              await _readyConfirmationSpeech.stop();
-
-              await voiceController.startRecipeReading(_formatRecipe(_recipe!));
-            }
-          }
-        },
-        listenFor: const Duration(seconds: 60),
-        pauseFor: const Duration(seconds: 60),
-        partialResults: true,
-        cancelOnError: false,
-        listenMode: stt.ListenMode.confirmation,
-      );
-    } catch (e) {
-      Future.delayed(const Duration(milliseconds: 500), _autoRestartReadyListening);
+    bool isActuallyListening = await _readyConfirmationSpeech.isListening;
+    print("👀 Ready listening monitor - isListening: $isActuallyListening");
+    
+    if (!isActuallyListening && _awaitingReadyConfirmation) {
+      print("   ⚠️ Not actually listening, restarting...");
+      _autoRestartReadyListening();
+    } else if (isActuallyListening) {
+      // Continue monitoring
+      print("   ✅ Still listening, continue monitoring");
+      _startReadyListeningMonitor();
     }
-  }
+  });
+}
 
   void _startManualRecipeReading() {
     if (_recipe == null) return;

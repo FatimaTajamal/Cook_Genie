@@ -50,22 +50,7 @@ class RecipeService {
     return [];
   }
 
-  static Future<List<String>> _getAllergies() async {
-    try {
-      final userId = FirebaseAuth.instance.currentUser?.uid;
-      if (userId == null) return [];
 
-      final doc =
-          await FirebaseFirestore.instance.collection('users').doc(userId).get();
-
-      if (doc.exists && doc.data() != null) {
-        return List<String>.from(doc.data()!['allergies'] ?? []);
-      }
-    } catch (e) {
-      print('Error fetching allergies from Firestore: $e');
-    }
-    return [];
-  }
 
   static Future<List<String>> _getAvailableIngredients() async {
     try {
@@ -134,7 +119,7 @@ class RecipeService {
     Function(String)? onError,
   }) async {
     final List<String> preferences = await _getDietaryPreferences();
-    final List<String> allergies = await _getAllergies();
+    
 
     final String preferenceKey = preferences.join(",").toLowerCase();
     final String cacheKey = "$query|$preferenceKey";
@@ -147,7 +132,7 @@ class RecipeService {
     final Map<String, dynamic> requestData = {
       "query": query,
       "dietaryPreferences": preferences,
-      "allergies": allergies,
+      
     };
 
     try {
@@ -179,12 +164,11 @@ class RecipeService {
     Function(String)? onError,
   }) async {
     final List<String> dietaryPrefs = await _getDietaryPreferences();
-    final List<String> allergies = await _getAllergies();
+   
 
     final Map<String, dynamic> requestData = {
       "ingredients": ingredients,
       "dietaryPreferences": dietaryPrefs,
-      "allergies": allergies,
     };
 
     try {
@@ -228,12 +212,11 @@ class RecipeService {
     List<String>? excludeIds, // NEW: Optional list of already shown recipe IDs
   }) async {
     final List<String> preferences = await _getDietaryPreferences();
-    final List<String> allergies = await _getAllergies();
+   
 
     final Map<String, dynamic> requestData = {
       "category": category,
       "dietaryPreferences": preferences,
-      "allergies": allergies,
       "page": page,
       "limit": limit,
       if (excludeIds != null && excludeIds.isNotEmpty) 
